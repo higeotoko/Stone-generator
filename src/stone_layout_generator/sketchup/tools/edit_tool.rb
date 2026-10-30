@@ -21,7 +21,11 @@ module Higeotoko
       COLOR_AFFECTED = [255, 200, 0]
       COLOR_INVALID = 'red'
 
-      attr_reader :controller, :selection, :mode, :message
+      attr_reader :selection, :mode, :message
+
+      def controller
+        @ctrl
+      end
 
       def initialize(controller)
         @ctrl = controller
@@ -111,7 +115,9 @@ module Higeotoko
 
           uv = uv_at(x, y, view)
           piece = uv && pick(uv, view)
-          Core::Log.info('click', uv: uv, piece: piece && [piece.a, piece.b], radius_mm: px_to_mm(view, PICK_PX).round(1))
+          Core::Log.info('click', uv: uv, piece: piece && [piece.a, piece.b], radius_mm: px_to_mm(view, PICK_PX).round(1),
+                                  nearest_joint_mm: uv && engine.nearest_joint_distance(uv)&.round(1),
+                                  stones: @ctrl.doc.panels.size, v_range: [@ctrl.doc.surface.v_min.round(1), @ctrl.doc.surface.v_max.round(1)])
           add = (flags & COPY_MODIFIER_MASK) != 0
           through = (flags & CONSTRAIN_MODIFIER_MASK) != 0
           through = @base_mode == :through ? !through : through

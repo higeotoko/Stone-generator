@@ -25,10 +25,13 @@ module Higeotoko
         @dialog&.close
       end
 
+      # パネル表示の更新。失敗しても 3D ビューの操作は止めない
       def refresh(tool)
         return unless @dialog && @tool.equal?(tool) && @ready
 
-        doc = tool.controller.doc
+        doc = tool.controller&.doc
+        return unless doc
+
         info = {
           'selection' => tool.selection_info,
           'mode' => tool.mode.to_s,
@@ -37,6 +40,8 @@ module Higeotoko
           'stats' => doc.stats
         }
         @dialog.execute_script("update(#{JSON.generate(info)})")
+      rescue StandardError => e
+        Core::Log.error("編集パネルを更新できません: #{e.class}: #{e.message}", at: (e.backtrace || []).first(4))
       end
 
       private
@@ -73,7 +78,8 @@ module Higeotoko
 
         yield @tool
         refresh(@tool)
-      rescue ArgumentError, Core::Error => e
+      rescue StandardError => e
+        Core::Log.error("編集パネルの操作に失敗: #{e.class}: #{e.message}", at: (e.backtrace || []).first(4)) unless e.is_a?(Core::Error) || e.is_a?(ArgumentError)
         @dialog&.execute_script("showError(#{JSON.generate(e.message)})")
       end
     end

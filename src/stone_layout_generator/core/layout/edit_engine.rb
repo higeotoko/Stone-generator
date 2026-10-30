@@ -42,6 +42,22 @@ module Higeotoko::StoneLayout::Core
       piece_for(best[1], best[2])
     end
 
+    # 診断用: 点 p から最も近い目地辺までの距離（max 以内になければ nil）
+    def nearest_joint_distance(p, max = 2000.0)
+      box = [p.x - max, p.y - max, p.x + max, p.y + max]
+      best = nil
+      @doc.panels_near(box).each do |panel, dx|
+        pts = Polygon.translate_x(panel.points, dx)
+        pts.each_index do |i|
+          next unless panel.flags[i] == 'J'
+
+          d = Geom2.dist_point_segment(p, pts[i], pts[(i + 1) % pts.size])
+          best = d if best.nil? || d < best
+        end
+      end
+      best && best <= max ? best : nil
+    end
+
     def piece_for(a, b)
       a, b = b, a if (b.x - a.x).abs <= Tol::POINT ? b.y < a.y : b.x < a.x
       host = find_host(a, b, WorkingSet.new(@doc))

@@ -2,7 +2,10 @@
 
 require_relative '../test_helper'
 require_relative '../support/fake_view'
-%w[units model_store geometry_builder layout_controller tools/edit_tool].each do |f|
+require 'json'
+require 'tmpdir'
+%w[units model_store face_reader geometry_builder layout_controller tools/preview_tool tools/edit_tool
+   ui/generate_dialog ui/edit_panel].each do |f|
   require_relative "../../src/stone_layout_generator/sketchup/#{f}"
 end
 
@@ -292,6 +295,57 @@ class TestEditTool < Minitest::Test
   def test_delete_with_nothing_selected_is_ignored
     refute @tool.onKeyDown(46, 1, 0, @view)
     assert_equal 30, @ctrl.doc.panels.size
+  end
+
+  def panel_dialog
+    SL::EditPanel.instance.instance_variable_get(:@dialog)
+  end
+
+  # 本物の編集パネル（HtmlDialog はモック）: クリック → パネル更新、ボタン → ツール操作
+  def test_edit_panel_round_trip
+    dlg = panel_dialog
+    refute_nil dlg
+    dlg.fire('ready')
+    assert_match(/\Aupdate\(/, dlg.scripts.last)
+    select_at(900, 300)
+    assert_nil @tool.message
+    info = JSON.parse(dlg.scripts.last[/\Aupdate\((.*)\)\z/m, 1])
+    assert_equal 900.0, info['selection']['position']
+    assert_equal 30.0, info['settings']['thickness']
+
+    dlg.fire('mode') # 通り目地ボタン
+    assert_equal :through, @tool.mode
+    assert_equal 5, @tool.selection.size
+    dlg.fire('move', '60')
+    5.times { |row| assert_in_delta 960, width_of(100, row * 600 + 300) }
+
+    dlg.fire('settings', JSON.generate('thickness' => 40))
+    assert_equal 40.0, @ctrl.doc.settings['thickness']
+    dlg.fire('remove')
+    assert_equal 25, @ctrl.doc.panels.size
+  end
+
+  # 編集画面から「割付の設定…」: 読み込み中のまま固まらず init が呼ばれる
+  def test_settings_dialog_from_edit_mode
+    made = []
+    orig = UI::HtmlDialog.method(:new)
+    UI::HtmlDialog.stub(:new, ->(*args) { orig.call(*args).tap { |d| made << d } }) do
+      panel = panel_dialog
+      panel.fire('ready')
+      panel.fire('dialog')
+    end
+    gd = made.last
+    refute_nil gd
+    gd.fire('ready')
+    script = gd.scripts.last
+    assert_match(/\Ainit\(/, script)
+    data = JSON.parse(script[/\Ainit\((.*)\)\z/m, 1])
+    assert_equal 'edit', data['mode']
+    assert_equal 30, data['stats']['stones']
+    assert_equal '平面壁', data['surface']['kind']
+    gd.fire('apply', JSON.generate(data['settings'].merge('thickness' => 45)))
+    assert_equal 45.0, @ctrl.doc.settings['thickness']
+    assert_match(/report\(.*反映/, gd.scripts.last)
   end
 
   class FakeMenu

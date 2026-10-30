@@ -59,6 +59,8 @@ module Higeotoko
       private
 
       def init_dialog
+        raise Core::InvalidInput, '割付データを読み込めませんでした' unless @surface
+
         info = {
           'mode' => @mode.to_s,
           'settings' => @settings.to_h,
@@ -70,6 +72,9 @@ module Higeotoko
           'stats' => @ctrl ? { 'stones' => @ctrl.doc.panels.size } : nil
         }
         @dialog.execute_script("init(#{JSON.generate(info)})")
+      rescue StandardError => e
+        Core::Log.error("設定ダイアログを開けません: #{e.class}: #{e.message}", at: (e.backtrace || []).first(4))
+        report('error' => ["設定を読み込めませんでした: #{e.message}"])
       end
 
       def surface_info

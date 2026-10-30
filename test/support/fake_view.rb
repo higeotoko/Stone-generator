@@ -243,19 +243,51 @@ module UI
   end
 end
 
-module Higeotoko
-  module StoneLayout
-    # 本物は UI::HtmlDialog。テストでは呼び出しだけ受ける
-    class EditPanel
-      def self.instance
-        @instance ||= new
-      end
+module UI
+  # コールバックと execute_script を記録する HtmlDialog
+  class HtmlDialog
+    STYLE_UTILITY = 1
+    attr_reader :callbacks, :scripts, :options
 
-      def attach(_t); end
+    def initialize(options = {})
+      @options = options
+      @callbacks = {}
+      @scripts = []
+      @visible = false
+    end
 
-      def detach(_t); end
+    def set_file(file)
+      @file = file
+    end
 
-      def refresh(_t); end
+    def add_action_callback(name, &block)
+      @callbacks[name] = block
+    end
+
+    def set_on_closed(&block)
+      @on_closed = block
+    end
+
+    def show
+      @visible = true
+    end
+
+    def visible?
+      @visible
+    end
+
+    def close
+      @visible = false
+      @on_closed&.call
+    end
+
+    def execute_script(script)
+      @scripts << script
+    end
+
+    # JavaScript から sketchup.name(args) が呼ばれたのと同じ
+    def fire(name, *args)
+      @callbacks.fetch(name).call(nil, *args)
     end
   end
 end
