@@ -97,4 +97,17 @@ class TestGeometry < Minitest::Test
     g.remove(1)
     assert_empty g.query([5, 5, 6, 6])
   end
+
+  # プレビュー・ハイライト用の 3D 線（縦目地が長さゼロにならないこと）
+  def test_polyline3d_vertical_horizontal_and_arc
+    surf = SurfaceDefinition.flat_wall(5000, 3000)
+    pts = surf.polyline3d(v2(900, 0), v2(900, 600))
+    assert_equal [[900.0, 0.0, 0.0], [900.0, 0.0, 600.0]], pts
+    pts = surf.polyline3d(v2(0, 600), v2(5000, 600))
+    assert_equal [[0.0, 0.0, 600.0], [5000.0, 0.0, 600.0]], pts
+    arc = SurfaceDefinition.rectangle(Profile.new([ArcSegment2.new(v2(0, 0), 1000, 0, Math::PI / 2)]), 0, 600)
+    pts = arc.polyline3d(v2(0, 300), v2(Math::PI * 500, 300))
+    assert pts.size > 3
+    pts.each { |p| assert_in_delta 1000, Math.hypot(p[0], p[1]), 1e-9 }
+  end
 end

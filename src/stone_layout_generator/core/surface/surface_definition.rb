@@ -107,13 +107,16 @@ module Higeotoko::StoneLayout::Core
 
     # 展開座標の折れ線を 3D 点列へ（曲面部分は分割して沿わせる）
     def polyline3d(a, b, s = 0.0)
+      # 縦の線（u が同じ）は曲面に沿わせる必要がない。両端をそのまま結ぶ
+      return [point3d(a.x, a.y, s), point3d(b.x, b.y, s)] if (b.x - a.x).abs <= Tol::POINT
+
       lo, hi = [a.x, b.x].minmax
       us = [lo]
       us.concat(@profile.breakpoints(lo, hi)) if hi - lo > Tol::POINT
       us << hi
       us.reverse! if b.x < a.x
       us.map do |u|
-        t = (b.x - a.x).abs > Tol::POINT ? (u - a.x) / (b.x - a.x) : 0.0
+        t = (u - a.x) / (b.x - a.x)
         point3d(u, a.y + (b.y - a.y) * t, s)
       end
     end
