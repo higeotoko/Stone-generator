@@ -75,55 +75,81 @@ module Higeotoko
       # ---- マウス ----------------------------------------------------------------
 
       def onMouseMove(flags, x, y, view)
-        return unless sync!
+        guard(view) do
+          next unless sync!
 
-        if @press && !@drag && @press_piece && (x - @press[0]).abs + (y - @press[1]).abs > DRAG_PX
-          start_drag
-        end
-        if @drag
-          update_drag(x, y, view, flags)
-        else
-          uv = uv_at(x, y, view)
-          @hover = uv && pick(uv, view)
+          if @press && !@drag && @press_piece && !@press_add && (x - @press[0]).abs + (y - @press[1]).abs > DRAG_PX
+            start_drag(:press)
+          end
+          if @drag
+            update_drag(x, y, view, flags)
+          else
+            uv = uv_at(x, y, view)
+            @hover = uv && pick(uv, view)
+          end
         end
         view.invalidate
       end
 
+      # 2通りの移動に対応する:
+      #   押したままドラッグ → 離して確定
+      #   クリックで拾う → マウスを動かす → もう一度クリックで確定（SketchUp の移動ツールと同じ）
       def onLButtonDown(flags, x, y, view)
-        return unless sync!
+        guard(view) do
+          next unless sync!
 
-        uv = uv_at(x, y, view)
-        piece = uv && pick(uv, view)
-        add = (flags & COPY_MODIFIER_MASK) != 0
-        through = (flags & CONSTRAIN_MODIFIER_MASK) != 0
-        @mode = through ? :through : :partial
-        if piece
-          pieces = through ? @engine.through_pieces(piece) : [piece]
-          if add
-            @selection = toggle(@selection, pieces)
-          elsif !includes_piece?(@selection, piece)
-            @selection = pieces
+          if @drag && @drag[:kind] == :click
+            update_drag(x, y, view, flags)
+            commit_drag
+            next
           end
-          @press = [x, y, uv]
-          @press_piece = piece
-        else
-          @selection = [] unless add
-          @menu_uv = uv
+
+          uv = uv_at(x, y, view)
+          piece = uv && pick(uv, view)
+          add = (flags & COPY_MODIFIER_MASK) != 0
+          through = (flags & CONSTRAIN_MODIFIER_MASK) != 0
+          @mode = through ? :through : :partial
+          @press_add = add
+          if piece
+            pieces = through ? @engine.through_pieces(piece) : [piece]
+            if add
+              @selection = toggle(@selection, pieces)
+            elsif !includes_piece?(@selection, piece) || through
+              @selection = pieces
+            end
+            @press = [x, y, uv]
+            @press_piece = piece
+          else
+            @selection = [] unless add
+            @menu_uv = uv
+            @press = nil
+            @press_piece = nil
+          end
+          @message = nil
+          notify_panel
+          update_status
         end
-        notify_panel
-        update_status
         view.invalidate
       end
 
       def onLButtonUp(_flags, _x, _y, view)
-        commit_drag if @drag
+        guard(view) do
+          if @drag && @drag[:kind] == :press
+            commit_drag
+          elsif !@drag && @press && @press_piece && !@press_add && !@selection.empty?
+            start_drag(:click) # クリックで拾った。次のクリックで確定
+          end
+        end
         @press = nil
         @press_piece = nil
         view.invalidate
       end
 
       def onRButtonDown(_flags, x, y, view)
-        @menu_uv = uv_at(x, y, view)
+        guard(view) do
+          cancel_drag if @drag
+          @menu_uv = uv_at(x, y, view)
+        end
       end
 
       # ---- キーボード ------------------------------------------------------------
@@ -133,6 +159,11 @@ module Higeotoko
       end
 
       def onUserText(text, view)
+        guard(view) { user_text(text) }
+        view.invalidate
+      end
+
+      def user_text(text)
         mm = Units.parse_length_mm(text)
         return UI.beep if @selection.empty?
 
@@ -141,7 +172,6 @@ module Higeotoko
         end
         cancel_drag
         move_selection(mm)
-        view.invalidate
       rescue ArgumentError => e
         @message = "数値が読めません: #{e.message}"
         update_status
@@ -149,9 +179,11 @@ module Higeotoko
 
       def onKeyDown(key, _repeat, _flags, view)
         del = DELETE_KEYS.include?(key) || (defined?(VK_DELETE) && key == VK_DELETE)
-        return false unless del && !@selection.empty? && !@drag
+        return false unless del && !@selection.empty?
+        return false if @drag && @drag[:kind] == :press
 
-        delete_selection
+        cancel_drag
+        guard(view) { delete_selection }
         view.invalidate
         true
       end
@@ -357,11 +389,14 @@ module Higeotoko
         out
       end
 
-      def start_drag
-        return if @selection.empty?
+      def start_drag(kind)
+        return if @selection.empty? || @press.nil? || @press[2].nil?
 
-        @drag = { origin: @press[2], delta: 0.0 }
+        @drag = { origin: @press[2], delta: 0.0, kind: kind }
         @plan = nil
+        return unless kind == :click
+
+        Sketchup.status_text = 'マウスを動かして位置を決め、クリックで確定（数値入力も可・Esc で取り消し）'
       end
 
       def update_drag(x, y, view, flags)
@@ -397,8 +432,10 @@ module Higeotoko
         plan = @plan
         delta = @drag[:delta]
         cancel_drag
-        return if plan.nil?
-
+        if plan.nil?
+          @message = nil
+          return
+        end
         commit(plan, '石割付: 目地移動') { shift_selection(delta) }
       end
 
@@ -423,10 +460,31 @@ module Higeotoko
       rescue Core::Error => e
         @message = e.message
         UI.messagebox("編集を確定できませんでした。\n#{e.message}")
+      rescue StandardError => e
+        report_exception(e, '編集を確定できませんでした')
       ensure
         notify_panel
         update_status
         Sketchup.active_model.active_view.invalidate
+      end
+
+      # イベント処理中の予期しないエラーを黙って捨てない
+      def guard(view)
+        yield
+      rescue StandardError => e
+        cancel_drag
+        report_exception(e, '目地編集でエラーが発生しました')
+        view&.invalidate
+      end
+
+      def report_exception(e, title)
+        Core::Log.error("#{title}: #{e.class}: #{e.message}", at: (e.backtrace || []).first(6))
+        @message = "#{title}（#{e.message}）"
+        update_status
+        return if @error_shown
+
+        @error_shown = true
+        UI.messagebox("#{title}。\n#{e.class}: #{e.message}\n\n詳細は ウィンドウ → Ruby コンソール に出力しています。")
       end
 
       def shift_selection(mm)
@@ -461,7 +519,7 @@ module Higeotoko
         pts = world_points(a, b, s)
         return if pts.size < 2
 
-        view.drawing_color = color
+        view.drawing_color = to_color(color)
         view.line_width = width
         view.line_stipple = ''
         view.draw(GL_LINE_STRIP, pts)
@@ -475,13 +533,17 @@ module Higeotoko
         return unless text && @last_hit_world
 
         sp = view.screen_coords(@last_hit_world)
-        view.drawing_color = color
+        view.drawing_color = to_color(color)
         view.draw_text(Geom::Point3d.new(sp.x + 16, sp.y - 24, 0), text.to_s)
+      end
+
+      def to_color(c)
+        c.is_a?(Array) && defined?(Sketchup::Color) ? Sketchup::Color.new(*c) : c
       end
 
       def update_status
         info = selection_info
-        base = 'クリック: 目地選択 / Shift: 通り目地 / ドラッグ: 移動 / 数値入力: 正確な移動 / Delete: 削除 / 右クリック: 追加・ロック'
+        base = '目地をクリック → 動かして → クリックで移動（ドラッグでも可） / Shift: 通り目地 / 数値入力: 正確な移動 / Delete: 削除 / 右クリック: 追加・角の納まり'
         Sketchup.status_text = @message ? "⚠ #{@message}" : (info ? "#{info['mode']} #{info['orientation']} 位置 #{info['position']}mm  |  #{base}" : base)
         Sketchup.vcb_label = '移動量'
       end

@@ -176,7 +176,7 @@ module Higeotoko
           end
           sig = g.get_attribute(ModelStore::DICT, 'sig')
           sigs[p.id] = sig
-          if sig != builder.current_signature(g)
+          unless builder.same_signature?(sig, builder.current_signature(g))
             issues << Issue.new(:modified, p.id, format('Stone_%04d は通常の編集ツールで変更されています', p.label))
           end
         end

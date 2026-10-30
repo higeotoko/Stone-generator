@@ -44,6 +44,15 @@ module Higeotoko
         (lo + hi).map { |c| (c * 10).round }.join(',')
       end
 
+      # 0.1mm 単位のシグネチャ同士を、丸め誤差（±1）を許して比べる
+      def same_signature?(a, b)
+        return false unless a && b
+
+        x = a.split(',').map(&:to_i)
+        y = b.split(',').map(&:to_i)
+        x.size == y.size && x.zip(y).all? { |p, q| (p - q).abs <= 1 }
+      end
+
       def current_signature(stone)
         bb = stone.bounds
         [bb.min.x, bb.min.y, bb.min.z, bb.max.x, bb.max.y, bb.max.z].map { |c| (Units.to_mm(c) * 10).round }.join(',')
@@ -54,8 +63,15 @@ module Higeotoko
       def fill(ents, mesh)
         pts = mesh.points.map { |p| Units.point_in(p) }
         soft = {}
+        failed = 0
         mesh.polygons.each do |pl|
-          face = ents.add_face(pl.indices.map { |i| pts[i] })
+          begin
+            face = ents.add_face(pl.indices.map { |i| pts[i] })
+          rescue ArgumentError => e
+            failed += 1
+            Core::Log.warn("面を作れませんでした: #{e.message}", points: pl.indices.map { |i| mesh.points[i].map { |c| c.round(3) } })
+            next
+          end
           next unless face
 
           n = mesh.normal_of(pl)
@@ -69,6 +85,7 @@ module Higeotoko
             soft[a < b ? [a, b] : [b, a]] = true
           end
         end
+        raise Core::GeometryError, "石の面を #{failed} 枚作れませんでした（Ruby コンソールに詳細）" if failed.positive?
         return if soft.empty?
 
         lookup = {}
