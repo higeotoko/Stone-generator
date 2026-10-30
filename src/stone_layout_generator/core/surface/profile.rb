@@ -169,6 +169,28 @@ module Higeotoko::StoneLayout::Core
       end
     end
 
+    # 平面上の点 p に最も近い断面上の位置 → [u, 距離]
+    def project(p)
+      best = nil
+      @segments.each_with_index do |seg, i|
+        s = if seg.is_a?(LineSegment2)
+              (p - seg.p0).dot(seg.dir).clamp(0.0, seg.length)
+            else
+              ang = Math.atan2(p.y - seg.center.y, p.x - seg.center.x)
+              delta = ((ang - seg.start_angle) * (seg.ccw? ? 1 : -1)) % (2 * Math::PI)
+              sweep = seg.sweep.abs
+              if delta > sweep
+                # 弧の外側: 近い方の端
+                delta = (2 * Math::PI - delta) < (delta - sweep) ? 0.0 : sweep
+              end
+              delta * seg.radius
+            end
+        d = seg.point_at(s).dist(p)
+        best = [@starts[i] + s, d] if best.nil? || d < best[1]
+      end
+      best
+    end
+
     # 3D の射線（xy 成分）と、オフセット d の断面との交点 → [[t, u], ...]
     def intersect_ray(o, dir, d)
       hits = []

@@ -110,4 +110,19 @@ class TestGeometry < Minitest::Test
     assert pts.size > 3
     pts.each { |p| assert_in_delta 1000, Math.hypot(p[0], p[1]), 1e-9 }
   end
+
+  def test_profile_project
+    prof = Profile.new([LineSegment2.new(v2(0, 0), v2(2000, 0)),
+                        ArcSegment2.new(v2(2000, 500), 500, -Math::PI / 2, Math::PI / 2),
+                        LineSegment2.new(v2(2500, 500), v2(2500, 2500))])
+    u, d = prof.project(v2(900, -300)) # 壁の手前 300 にある別の箱の角
+    assert_in_delta 900, u
+    assert_in_delta 300, d
+    q = v2(2000, 500) + v2(Math.cos(-Math::PI / 4), Math.sin(-Math::PI / 4)) * 700
+    u, d = prof.project(q)
+    assert_in_delta 2000 + Math::PI * 500 / 4, u, 1e-9
+    assert_in_delta 200, d, 1e-9
+    u, = prof.project(v2(2700, 1500))
+    assert_in_delta 2000 + Math::PI * 250 + 1000, u, 1e-9
+  end
 end

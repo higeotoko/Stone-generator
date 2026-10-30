@@ -181,6 +181,81 @@ class TestEditTool < Minitest::Test
     assert_equal [@ctrl.group], @model.selection.to_a
   end
 
+  def mm_pt(x, y, z)
+    Geom::Point3d.new(x / 25.4, y / 25.4, z / 25.4)
+  end
+
+  # 別のボリューム（壁の手前にある箱）の端点・鉛直線に目地を合わせる
+  def test_snap_to_other_volume
+    box = @model.entities.add_group
+    v = Sketchup::Vertex.new(mm_pt(1234, -500, 0))
+    edge = Sketchup::Edge.new(mm_pt(1234, -500, 0), mm_pt(1234, -500, 900))
+    edge.parent = Sketchup::FakeDefinition.new(box)
+    v.edges = [edge]
+    Sketchup::InputPoint.next_hit = { position: mm_pt(1234, -500, 0), vertex: v, edge: nil, dof: 0 }
+    drag(at(900, 300), at(1200, 300))
+    assert_in_delta 1234, width_of(450, 300), 1e-6
+
+    # 鉛直な線にも合う（縦目地）
+    Sketchup::InputPoint.next_hit = { position: mm_pt(1500, -500, 400), vertex: nil, edge: edge, dof: 1 }
+    edge2 = Sketchup::Edge.new(mm_pt(1500, -500, 0), mm_pt(1500, -500, 900))
+    edge2.parent = Sketchup::FakeDefinition.new(box)
+    Sketchup::InputPoint.next_hit[:edge] = edge2
+    drag(at(1234, 300), at(1480, 300))
+    assert_in_delta 1500, width_of(450, 300), 1e-6
+  ensure
+    Sketchup::InputPoint.next_hit = nil
+  end
+
+  def test_horizontal_joint_snaps_to_other_volume_height
+    box = @model.entities.add_group
+    v = Sketchup::Vertex.new(mm_pt(3000, -800, 655))
+    e = Sketchup::Edge.new(mm_pt(3000, -800, 655), mm_pt(3500, -800, 655))
+    e.parent = Sketchup::FakeDefinition.new(box)
+    v.edges = [e]
+    Sketchup::InputPoint.next_hit = { position: mm_pt(3000, -800, 655), vertex: v, edge: nil, dof: 0 }
+    drag(at(450, 600), at(450, 640), CONSTRAIN_MODIFIER_MASK)
+    assert_in_delta 655, Polygon.min_extents(@ctrl.doc.panel_at(v2(450, 300)).first.points)[1], 1e-6
+  ensure
+    Sketchup::InputPoint.next_hit = nil
+  end
+
+  def test_own_stones_are_not_snap_targets
+    stone = SL::ModelStore.stone_index(@ctrl.group).values.first
+    e = Sketchup::Edge.new(mm_pt(1234, 0, 0), mm_pt(1234, 0, 900))
+    e.parent = Sketchup::FakeDefinition.new(stone)
+    Sketchup::InputPoint.next_hit = { position: mm_pt(1234, 0, 300), vertex: nil, edge: e, dof: 1 }
+    drag(at(900, 300), at(1000, 300))
+    assert_in_delta 1000, width_of(450, 300), 1e-6 # カーソル位置どおり（自分の石には吸着しない）
+  ensure
+    Sketchup::InputPoint.next_hit = nil
+  end
+
+  # パネルの「通り目地」に切り替えてからクリック → 通り目地全体が選ばれ、まとめて動く
+  def test_through_mode_from_panel
+    @tool.toggle_mode
+    @tool.onLButtonDown(0, *at(900, 300), @view)
+    @tool.onLButtonUp(0, *at(900, 300), @view)
+    assert_equal 5, @tool.selection.size # 芋目地の縦目地 5 段分
+    assert_equal '通り目地', @tool.selection_info['mode']
+    @tool.onMouseMove(0, *at(960, 300), @view)
+    @tool.onLButtonDown(0, *at(960, 300), @view)
+    @tool.onLButtonUp(0, *at(960, 300), @view)
+    5.times { |row| assert_in_delta 960, width_of(100, row * 600 + 300) }
+    # Shift で一時的に部分目地
+    @tool.onLButtonDown(CONSTRAIN_MODIFIER_MASK, *at(1800, 300), @view)
+    assert_equal 1, @tool.selection.size
+  end
+
+  def test_toggle_after_selecting_expands_selection
+    @tool.onLButtonDown(0, *at(900, 300), @view)
+    @tool.onLButtonUp(0, *at(900, 300), @view)
+    @tool.onCancel(0, @view) # クリックで拾った移動はやめて、選択だけ残す
+    assert_equal 1, @tool.selection.size
+    @tool.toggle_mode
+    assert_equal 5, @tool.selection.size
+  end
+
   class FakeMenu
     def add_item(*) = 1
     def add_separator; end

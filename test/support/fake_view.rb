@@ -27,6 +27,12 @@ class String
 end
 
 module Geom
+  class Vector3d
+    def length
+      Math.sqrt(x * x + y * y + z * z)
+    end
+  end
+
   # 平行移動だけのモック（入れ子グループの座標変換の確認用）
   class Transformation
     attr_reader :off
@@ -48,6 +54,10 @@ module Geom
   end
 
   class Point3d
+    def -(other)
+      Vector3d.new(x - other.x, y - other.y, z - other.z)
+    end
+
     def transform(t)
       return self if is_a?(Vector3d) || !t.is_a?(Transformation)
 
@@ -74,6 +84,55 @@ module Sketchup
     def parent
       owner = @parent_entities.owner
       owner.nil? || owner.is_a?(Model) ? owner : FakeDefinition.new(owner)
+    end
+  end
+
+  class Vertex
+    attr_accessor :edges
+  end
+
+  class Edge
+    attr_accessor :parent
+  end
+
+  # テストで次の推定結果を仕込める InputPoint
+  class InputPoint
+    class << self
+      attr_accessor :next_hit # { position:, vertex:, edge:, dof: }
+    end
+
+    def pick(_view, _x, _y)
+      @hit = self.class.next_hit
+    end
+
+    def valid?
+      !@hit.nil?
+    end
+
+    def degrees_of_freedom
+      @hit ? @hit[:dof] : 3
+    end
+
+    def vertex
+      @hit && @hit[:vertex]
+    end
+
+    def edge
+      @hit && @hit[:edge]
+    end
+
+    def position
+      @hit[:position]
+    end
+
+    def display?
+      valid?
+    end
+
+    def draw(_view); end
+
+    def tooltip
+      '端点'
     end
   end
 

@@ -27,6 +27,7 @@ module Higeotoko
         @ctrl = controller
         @selection = []
         @mode = :partial
+        @base_mode = :partial # パネル・右クリックで選んだモード。Shift で一時的に反転
         @hover = nil
         @drag = nil
         @plan = nil
@@ -113,6 +114,7 @@ module Higeotoko
           Core::Log.info('click', uv: uv, piece: piece && [piece.a, piece.b], radius_mm: px_to_mm(view, PICK_PX).round(1))
           add = (flags & COPY_MODIFIER_MASK) != 0
           through = (flags & CONSTRAIN_MODIFIER_MASK) != 0
+          through = @base_mode == :through ? !through : through
           @mode = through ? :through : :partial
           @press_add = add
           if piece
@@ -249,7 +251,8 @@ module Higeotoko
 
       def toggle_mode
         @mode = @mode == :through ? :partial : :through
-        if @mode == :through && @selection.size == 1
+        @base_mode = @mode
+        if @mode == :through && !@selection.empty?
           @selection = engine.through_pieces(@selection.first)
         elsif @mode == :partial
           @selection = @selection.first(1)
@@ -313,6 +316,10 @@ module Higeotoko
         return unless @ctrl.valid?
 
         s = draw_offset
+        if @drag && @ext_snap && input_point&.display?
+          input_point.draw(view)
+          view.tooltip = input_point.tooltip if view.respond_to?(:tooltip=)
+        end
         if @drag && @plan
           color = @plan.ok? ? COLOR_PREVIEW : COLOR_INVALID
           @plan.preview_faces.each { |f| draw_polygon(view, f.points, s, COLOR_AFFECTED, 2) } if @plan.ok?
@@ -445,12 +452,85 @@ module Higeotoko
         end
         # Alt(Command) を押している間はスナップしない
         free = (flags & ALT_MODIFIER_MASK) != 0
-        snap = free ? Core::Snapper::Result.new(raw, nil) : snapper.snap(@selection, raw, px_to_mm(view, SNAP_PX))
+        ext = free ? nil : external_snap(x, y, view)
+        @ext_snap = !ext.nil?
+        snap = if free then Core::Snapper::Result.new(raw, nil)
+               elsif ext then Core::Snapper::Result.new(*ext)
+               else snapper.snap(@selection, raw, px_to_mm(view, SNAP_PX))
+               end
         @drag[:delta] = snap.delta
         @drag[:snap] = snap.label
         @plan = snap.delta.abs < Core::Tol::POINT ? nil : engine.plan_move(@selection, snap.delta, mode: @mode)
         Sketchup.vcb_value = Units.format_mm(snap.delta)
         Sketchup.status_text = @plan && !@plan.ok? ? "⚠ #{@plan.errors.first}" : drag_label
+      end
+
+      def input_point
+        @input ||= defined?(Sketchup::InputPoint) ? Sketchup::InputPoint.new : nil
+      end
+
+      VERTICAL_EDGE = 0.995 # |方向ベクトルの z| がこれ以上なら鉛直な線とみなす
+
+      # 別のボリューム（壁・柱・サッシ・下絵など）の端点や線へのスナップ。
+      # SketchUp 標準の推定（InputPoint）が拾った点を、壁の展開座標へ投影する。
+      #   縦目地: 端点、または鉛直な線 → その点の壁に沿った位置 u
+      #   横目地: 端点、または水平な線 → その点の高さ v
+      # → [移動量 mm, ラベル] / nil
+      def external_snap(x, y, view)
+        ip = input_point
+        return nil unless ip
+
+        ip.pick(view, x, y)
+        return nil unless ip.valid? && ip.degrees_of_freedom < 2
+
+        orient = @selection.first.orientation
+        if ip.vertex
+          return nil if own_geometry?(ip.vertex)
+
+          label = '他の形状の端点'
+        elsif ip.edge
+          e = ip.edge
+          return nil if own_geometry?(e)
+
+          d = e.end.position - e.start.position
+          return nil if d.length.zero?
+
+          vz = (d.z / d.length).abs
+          return nil if orient == :v ? vz < VERTICAL_EDGE : vz > 1 - VERTICAL_EDGE
+
+          label = '他の形状の線'
+        else
+          return nil
+        end
+        local = Units.point_mm(ip.position.transform(@ctrl.world_transform.inverse))
+        pc = @selection.first
+        target = if orient == :v
+                   @ctrl.doc.surface.profile.project(Core::Vec2.new(local[0], local[1]))[0]
+                 else
+                   local[2]
+                 end
+        delta = target - pc.position
+        if @ctrl.doc.periodic? && orient == :v
+          l = @ctrl.doc.period
+          delta -= l * (delta / l).round
+        end
+        [delta, label]
+      rescue StandardError => e
+        Core::Log.warn("外部スナップに失敗: #{e.message}")
+        nil
+      end
+
+      # 石割付自身（割付グループ・石グループ）の形状か
+      def own_geometry?(ent)
+        e = ent.is_a?(Sketchup::Vertex) ? ent.edges.first : ent
+        return false unless e
+
+        defn = e.parent
+        return false unless defn.respond_to?(:instances)
+
+        defn.instances.any? do |g|
+          g == @ctrl.group || (ModelStore.stone_group?(g) && g.get_attribute(ModelStore::DICT, 'layout_id') == @ctrl.doc.id)
+        end
       end
 
       def drag_label
@@ -476,6 +556,7 @@ module Higeotoko
       def cancel_drag
         @drag = nil
         @plan = nil
+        @ext_snap = false
       end
 
       def commit(plan, name)
@@ -578,7 +659,8 @@ module Higeotoko
 
       def update_status
         info = selection_info
-        base = '目地をクリック → 動かして → クリックで移動（ドラッグでも可） / Shift: 通り目地 / 数値入力: 正確な移動 / Delete: 削除 / 右クリック: 追加・角の納まり'
+        other = @base_mode == :through ? '部分目地' : '通り目地'
+        base = "目地をクリック → 動かして → クリックで移動（ドラッグでも可） / Shift+クリック: #{other} / 数値入力: 正確な移動 / Delete: 削除 / 右クリック: 追加・角の納まり"
         head = if @message then "⚠ #{@message}"
                elsif @done then "✔ #{@done}"
                end
