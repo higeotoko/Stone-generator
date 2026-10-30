@@ -87,8 +87,30 @@ module Sketchup
     attr_accessor :owner
   end
 
+  class FakeSelection
+    def initialize
+      @list = []
+    end
+
+    def to_a
+      @list.dup
+    end
+
+    def clear
+      @list.clear
+    end
+
+    def add(*items)
+      @list.concat(items.flatten)
+    end
+  end
+
   class Model
     attr_accessor :tool
+
+    def selection
+      @selection ||= FakeSelection.new
+    end
 
     def active_path
       nil

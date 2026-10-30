@@ -155,4 +155,36 @@ class TestEditTool < Minitest::Test
     @tool.onLButtonDown(0, *at(450, 300), @view)
     assert_match(/目地が見つかりません/, @tool.message)
   end
+
+  # SketchUp 2027: ツールを選んだ直後、activate より先にクリックが届くことがある
+  def test_click_before_activate
+    tool = SL::EditTool.new(@ctrl)
+    tool.onMouseMove(0, *at(900, 300), @view)
+    tool.onLButtonDown(0, *at(900, 300), @view)
+    tool.onLButtonUp(0, *at(900, 300), @view)
+    assert_nil tool.message
+    refute_empty tool.selection
+    tool.onMouseMove(0, *at(1000, 300), @view)
+    tool.onLButtonDown(0, *at(1000, 300), @view)
+    tool.onLButtonUp(0, *at(1000, 300), @view)
+    assert_in_delta 1000, width_of(450, 300)
+    assert_nil tool.selection_info && nil
+    assert tool.getMenu(FakeMenu.new)
+  end
+
+  def test_selection_cleared_while_editing_and_restored
+    @model.selection.add(@ctrl.group)
+    tool = SL::EditTool.new(@ctrl)
+    tool.activate
+    assert_empty @model.selection.to_a
+    tool.deactivate(@view)
+    assert_equal [@ctrl.group], @model.selection.to_a
+  end
+
+  class FakeMenu
+    def add_item(*) = 1
+    def add_separator; end
+    def add_submenu(*) = self
+    def set_validation_proc(*); end
+  end
 end

@@ -37,8 +37,11 @@ module Higeotoko
       # ---- ライフサイクル --------------------------------------------------------
 
       def activate
-        @engine = Core::EditEngine.new(@ctrl.doc)
-        @snapper = Core::Snapper.new(@ctrl.doc)
+        engine
+        # 割付グループが選択されたままだと、石の線がすべて選択色（青）で表示されて目地のハイライトと紛らわしい
+        model = @ctrl.model
+        @restore_selection = model.selection.to_a.select(&:valid?)
+        model.selection.clear
         warn_integrity
         EditPanel.instance.attach(self)
         update_status
@@ -47,6 +50,7 @@ module Higeotoko
       def deactivate(view)
         cancel_drag
         EditPanel.instance.detach(self)
+        restore_selection
         view.invalidate
       end
 
@@ -112,7 +116,7 @@ module Higeotoko
           @mode = through ? :through : :partial
           @press_add = add
           if piece
-            pieces = through ? @engine.through_pieces(piece) : [piece]
+            pieces = through ? engine.through_pieces(piece) : [piece]
             if add
               @selection = toggle(@selection, pieces)
             elsif !includes_piece?(@selection, piece) || through
@@ -196,7 +200,7 @@ module Higeotoko
       def getMenu(menu, _flags = nil, _x = nil, _y = nil, _view = nil)
         unless @selection.empty?
           menu.add_item('目地を削除（石を結合）') { delete_selection }
-          locked = @selection.any? { |pc| @engine.segment_of(pc)&.locked }
+          locked = @selection.any? { |pc| engine.segment_of(pc)&.locked }
           menu.add_item(locked ? '目地のロックを解除' : '目地をロック') { lock_selection(!locked) }
           menu.add_item(@mode == :through ? '部分目地として扱う' : '通り目地として扱う') { toggle_mode }
           menu.add_separator
@@ -219,7 +223,7 @@ module Higeotoko
       def move_selection(mm)
         return if @selection.empty?
 
-        plan = @engine.plan_move(@selection, mm, mode: @mode)
+        plan = engine.plan_move(@selection, mm, mode: @mode)
         commit(plan, '石割付: 目地移動') { |_| shift_selection(mm) }
       end
 
@@ -227,26 +231,26 @@ module Higeotoko
         piece = @selection.first
         return unless piece
 
-        plan = @engine.plan_delete(piece)
+        plan = engine.plan_delete(piece)
         commit(plan, '石割付: 目地削除') { @selection = [] }
       end
 
       def add_joint(uv, orient)
         return unless uv
 
-        plan = @engine.plan_add(uv, orient)
+        plan = engine.plan_add(uv, orient)
         commit(plan, '石割付: 目地追加') { @selection = [] }
       end
 
       def lock_selection(value)
-        plan = @engine.plan_lock(@selection, value, mode: @mode)
+        plan = engine.plan_lock(@selection, value, mode: @mode)
         commit(plan, value ? '石割付: 目地ロック' : '石割付: ロック解除')
       end
 
       def toggle_mode
         @mode = @mode == :through ? :partial : :through
         if @mode == :through && @selection.size == 1
-          @selection = @engine.through_pieces(@selection.first)
+          @selection = engine.through_pieces(@selection.first)
         elsif @mode == :partial
           @selection = @selection.first(1)
         end
@@ -291,7 +295,7 @@ module Higeotoko
         return nil if @selection.empty?
 
         pc = @selection.first
-        seg = @engine.segment_of(pc)
+        seg = engine.segment_of(pc)
         {
           'orientation' => pc.orientation == :v ? '縦目地' : '横目地',
           'orient' => pc.orientation.to_s,
@@ -335,9 +339,10 @@ module Higeotoko
       def sync!
         return false unless @ctrl.valid?
 
-        if @ctrl.refresh! || !@engine.doc.equal?(@ctrl.doc)
-          @engine = Core::EditEngine.new(@ctrl.doc)
-          @snapper = Core::Snapper.new(@ctrl.doc)
+        reloaded = @ctrl.refresh!
+        if reloaded || (@engine && !@engine.doc.equal?(@ctrl.doc))
+          @engine = nil
+          engine
           @selection = []
           @hover = nil
           cancel_drag
@@ -347,6 +352,30 @@ module Higeotoko
       rescue Core::PersistenceError => e
         @message = e.message
         false
+      end
+
+      # 目地編集エンジン。activate より先にマウス操作が届いても使えるよう、必要になった時点で作る
+      def engine
+        if @engine.nil? || !@engine.doc.equal?(@ctrl.doc)
+          @engine = Core::EditEngine.new(@ctrl.doc)
+          @snapper = Core::Snapper.new(@ctrl.doc)
+        end
+        @engine
+      end
+
+      def snapper
+        engine
+        @snapper
+      end
+
+      def restore_selection
+        list = (@restore_selection || []).select(&:valid?)
+        list = [@ctrl.group] if list.empty? && @ctrl.valid?
+        sel = @ctrl.model.selection
+        sel.clear
+        sel.add(list)
+      rescue StandardError
+        nil
       end
 
       def draw_offset
@@ -375,7 +404,7 @@ module Higeotoko
       end
 
       def pick(uv, view)
-        @engine.pick(uv, px_to_mm(view, PICK_PX))
+        engine.pick(uv, px_to_mm(view, PICK_PX))
       end
 
       def includes_piece?(list, piece)
@@ -416,10 +445,10 @@ module Higeotoko
         end
         # Alt(Command) を押している間はスナップしない
         free = (flags & ALT_MODIFIER_MASK) != 0
-        snap = free ? Core::Snapper::Result.new(raw, nil) : @snapper.snap(@selection, raw, px_to_mm(view, SNAP_PX))
+        snap = free ? Core::Snapper::Result.new(raw, nil) : snapper.snap(@selection, raw, px_to_mm(view, SNAP_PX))
         @drag[:delta] = snap.delta
         @drag[:snap] = snap.label
-        @plan = snap.delta.abs < Core::Tol::POINT ? nil : @engine.plan_move(@selection, snap.delta, mode: @mode)
+        @plan = snap.delta.abs < Core::Tol::POINT ? nil : engine.plan_move(@selection, snap.delta, mode: @mode)
         Sketchup.vcb_value = Units.format_mm(snap.delta)
         Sketchup.status_text = @plan && !@plan.ok? ? "⚠ #{@plan.errors.first}" : drag_label
       end
@@ -458,8 +487,7 @@ module Higeotoko
         end
         change = @ctrl.commit_plan(plan, name)
         Core::Log.info("#{name}: 確定", regen: change.regenerate, added: change.added, removed: change.removed)
-        @engine = Core::EditEngine.new(@ctrl.doc)
-        @snapper = Core::Snapper.new(@ctrl.doc)
+        @engine = nil
         yield if block_given?
         revalidate_selection
         @message = nil
@@ -504,7 +532,7 @@ module Higeotoko
       def revalidate_selection
         @selection = @selection.filter_map do |pc|
           mid = (pc.a + pc.b) * 0.5
-          @engine.pick(mid, 0.5)
+          engine.pick(mid, 0.5)
         end
       end
 
