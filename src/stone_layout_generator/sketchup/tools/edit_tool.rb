@@ -106,6 +106,7 @@ module Higeotoko
 
           uv = uv_at(x, y, view)
           piece = uv && pick(uv, view)
+          Core::Log.info('click', uv: uv, piece: piece && [piece.a, piece.b], radius_mm: px_to_mm(view, PICK_PX).round(1))
           add = (flags & COPY_MODIFIER_MASK) != 0
           through = (flags & CONSTRAIN_MODIFIER_MASK) != 0
           @mode = through ? :through : :partial
@@ -125,7 +126,11 @@ module Higeotoko
             @press = nil
             @press_piece = nil
           end
-          @message = nil
+          @message = if uv.nil?
+                       'クリック位置が石の面に当たっていません（割付グループの位置がずれている可能性があります）'
+                     elsif piece.nil?
+                       '目地が見つかりません。目地の線にもう少し近づけてクリックしてください'
+                     end
           notify_panel
           update_status
         end
@@ -451,12 +456,14 @@ module Higeotoko
           update_status
           return
         end
-        @ctrl.commit_plan(plan, name)
+        change = @ctrl.commit_plan(plan, name)
+        Core::Log.info("#{name}: 確定", regen: change.regenerate, added: change.added, removed: change.removed)
         @engine = Core::EditEngine.new(@ctrl.doc)
         @snapper = Core::Snapper.new(@ctrl.doc)
         yield if block_given?
         revalidate_selection
         @message = nil
+        @done = format('%s しました（作り直した石 %d 枚）', name.sub('石割付: ', ''), change.regenerate.size + change.added.size)
       rescue Core::Error => e
         @message = e.message
         UI.messagebox("編集を確定できませんでした。\n#{e.message}")
@@ -544,7 +551,12 @@ module Higeotoko
       def update_status
         info = selection_info
         base = '目地をクリック → 動かして → クリックで移動（ドラッグでも可） / Shift: 通り目地 / 数値入力: 正確な移動 / Delete: 削除 / 右クリック: 追加・角の納まり'
-        Sketchup.status_text = @message ? "⚠ #{@message}" : (info ? "#{info['mode']} #{info['orientation']} 位置 #{info['position']}mm  |  #{base}" : base)
+        head = if @message then "⚠ #{@message}"
+               elsif @done then "✔ #{@done}"
+               end
+        @done = nil
+        body = info ? "#{info['mode']} #{info['orientation']} 位置 #{info['position']}mm  |  #{base}" : base
+        Sketchup.status_text = head ? "#{head}  |  #{body}" : body
         Sketchup.vcb_label = '移動量'
       end
 

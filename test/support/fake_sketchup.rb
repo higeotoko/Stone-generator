@@ -186,6 +186,7 @@ module Sketchup
       @model = model
       @parent_entities = parent
       @entities = Entities.new(model)
+      @entities.instance_variable_set(:@owner, self)
       @name = ''
     end
 
@@ -230,6 +231,7 @@ module Sketchup
 
     def initialize
       @entities = Entities.new(self)
+      @entities.instance_variable_set(:@owner, self)
       @materials = Materials.new
       @undo = []
       @redo = []

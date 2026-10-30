@@ -126,4 +126,33 @@ class TestEditTool < Minitest::Test
     tool.onLButtonDown(0, *at(900, 300), @view)
     refute_empty tool.selection
   end
+  # 壁グループの中に作った割付を、モデル直下から編集する（祖先グループの変換を考慮）
+  def test_layout_inside_moved_wall_group
+    model = Sketchup::Model.new
+    Sketchup.active_model = model
+    wall = model.entities.add_group
+    wall.transformation = Geom::Transformation.new([1000 / 25.4, 2000 / 25.4, 500 / 25.4])
+    ctrl, = SL::LayoutController.create(model, wall.entities, SurfaceDefinition.flat_wall(5000, 3000), Settings.new)
+    tool = SL::EditTool.new(ctrl)
+    tool.activate
+    view = model.active_view
+    # ワールド座標では u=900 の目地は x=1900、v=300 は z=800
+    from = view.screen_of_mm(1900, 800)
+    to = view.screen_of_mm(2000, 800)
+    tool.onMouseMove(0, *from, view)
+    tool.onLButtonDown(0, *from, view)
+    tool.onLButtonUp(0, *from, view)
+    assert_nil tool.message
+    tool.onMouseMove(0, *to, view)
+    tool.onLButtonDown(0, *to, view)
+    tool.onLButtonUp(0, *to, view)
+    assert_in_delta 1000, Polygon.min_extents(ctrl.doc.panel_at(v2(450, 300)).first.points)[0]
+  end
+
+  def test_click_off_surface_explains_why
+    @tool.onLButtonDown(0, *at(-500, 300), @view)
+    assert_match(/当たっていません/, @tool.message)
+    @tool.onLButtonDown(0, *at(450, 300), @view)
+    assert_match(/目地が見つかりません/, @tool.message)
+  end
 end

@@ -27,13 +27,31 @@ class String
 end
 
 module Geom
+  # 平行移動だけのモック（入れ子グループの座標変換の確認用）
   class Transformation
+    attr_reader :off
+
+    def initialize(off = [0.0, 0.0, 0.0])
+      @off = off.map(&:to_f)
+    end
+
     def inverse
-      self
+      Transformation.new(@off.map(&:-@))
     end
 
     def *(other)
-      other.is_a?(Transformation) ? self : other
+      return Transformation.new(@off.zip(other.off).map(&:sum)) if other.is_a?(Transformation)
+      return other.transform(self) if other.is_a?(Point3d)
+
+      other
+    end
+  end
+
+  class Point3d
+    def transform(t)
+      return self if is_a?(Vector3d) || !t.is_a?(Transformation)
+
+      Point3d.new(x + t.off[0], y + t.off[1], z + t.off[2])
     end
   end
 
@@ -46,9 +64,27 @@ end
 
 module Sketchup
   class Group
+    attr_writer :transformation
+
     def transformation
-      Geom::Transformation.new
+      @transformation ||= Geom::Transformation.new
     end
+
+    # 本物はグループの定義（ComponentDefinition）。定義の instances で親グループへたどれる
+    def parent
+      owner = @parent_entities.owner
+      owner.nil? || owner.is_a?(Model) ? owner : FakeDefinition.new(owner)
+    end
+  end
+
+  FakeDefinition = Struct.new(:group) do
+    def instances
+      [group]
+    end
+  end
+
+  class Entities
+    attr_accessor :owner
   end
 
   class Model

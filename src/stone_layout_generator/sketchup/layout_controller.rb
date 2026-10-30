@@ -76,9 +76,34 @@ module Higeotoko
 
       # 割付グループのワールド変換（グループ内で編集中でも正しく描画するため）
       def world_transform
-        t = @group.transformation
-        path = model.active_path || []
-        path.include?(@group) ? model.edit_transform : model.edit_transform * t
+        ap = model.active_path || []
+        return model.edit_transform if ap.include?(@group) # 割付グループの中に入って編集中
+
+        path = instance_path
+        # 割付グループがいま開いている階層の直下にある
+        return model.edit_transform * @group.transformation if !ap.empty? && path[0...-1] == ap
+
+        # 壁グループの中に作った割付を、外（モデル直下）から編集する場合など:
+        # 祖先のグループ・コンポーネントの変換をすべて掛け合わせる
+        path.map(&:transformation).reduce { |a, b| a * b }
+      end
+
+      # モデル直下から割付グループまでのインスタンスの並び
+      def instance_path
+        path = [@group]
+        e = @group
+        20.times do
+          parent = e.parent
+          break if parent.nil? || parent.is_a?(Sketchup::Model)
+          break unless parent.respond_to?(:instances)
+
+          inst = parent.instances.first
+          break unless inst
+
+          path.unshift(inst)
+          e = inst
+        end
+        path
       end
 
       # ---- 編集の確定 -----------------------------------------------------------
