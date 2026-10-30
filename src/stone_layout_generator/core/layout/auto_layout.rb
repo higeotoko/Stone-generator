@@ -21,8 +21,10 @@ module Higeotoko::StoneLayout::Core
       v_lo = b[1]
       v_hi = b[3]
 
-      rows_v = positions(v_lo, v_hi, @s.pitch_v, @s['align_v'], @s['origin_v'], @s['end_mode'],
-                         @s.min_pitch_v, @s.max_pitch_v, 0.0)
+      # 開口（窓・扉）の縁: まぐさ・窓台の高さに横目地、抱きの位置に縦目地を通す
+      forced_u, forced_v = opening_lines
+      rows_v = force(positions(v_lo, v_hi, @s.pitch_v, @s['align_v'], @s['origin_v'], @s['end_mode'],
+                               @s.min_pitch_v, @s.max_pitch_v, 0.0), forced_v, v_lo, v_hi, @s.min_pitch_v)
       levels = [v_lo] + rows_v + [v_hi]
       segs = []
       rows_v.each do |v|
@@ -44,12 +46,41 @@ module Higeotoko::StoneLayout::Core
                  si.zero? ? inner : [a] + inner
                end
              end
+        us = force(us, forced_u, u_lo, u_hi, @s.min_pitch_u, @surface.periodic? ? @surface.period : nil)
         us.each { |u| segs.concat(clip(Vec2.new(u, v0), Vec2.new(u, v1))) }
         all = ([u_lo] + us + [u_hi]).sort
         row_stats << { 'v' => [v0, v1], 'first' => (all[1] - all[0]).round(2), 'last' => (all[-1] - all[-2]).round(2) }
       end
 
       Result.new(segs, { 'rows' => row_stats, 'row_count' => levels.size - 1 }, warnings)
+    end
+
+    # 開口の外接矩形の縁 → [縦目地の u, 横目地の v]
+    def opening_lines
+      return [[], []] unless @s['align_openings'] && @surface.holes?
+
+      us = []
+      vs = []
+      @surface.holes.each do |h|
+        b = Polygon.bbox(h)
+        us.push(b[0], b[2])
+        vs.push(b[1], b[3])
+      end
+      [us.uniq, vs.uniq]
+    end
+
+    # 指定位置に目地を必ず置く。近すぎる（最小寸法未満の石ができる）既存の目地は取り除く
+    def force(ps, forced, lo, hi, min, period = nil)
+      return ps if forced.empty?
+
+      fs = forced.select { |f| period || (f > lo + Tol::POINT && f < hi - Tol::POINT) }
+      near = lambda do |a, b|
+        d = (a - b).abs
+        d = [d, period - d].min if period
+        d < min - Tol::POINT
+      end
+      kept = ps.reject { |p| fs.any? { |f| near.call(p, f) } }
+      (kept + fs).sort.each_with_object([]) { |x, acc| acc << x if acc.empty? || x - acc.last > Tol::POINT }
     end
 
     # 範囲 (lo, hi) の内部に置く目地位置（両端は含まない）
@@ -157,23 +188,32 @@ module Higeotoko::StoneLayout::Core
     end
 
     # 外周多角形でクリップ（長方形以外の壁にも対応）
+    # 外周多角形と開口でクリップ（長方形以外の壁・窓のある壁）。
+    # 開口の中の部分と、開口の縁に重なる部分は目地にしない。
     def clip(a, b)
-      return [[a, b]] if @surface.periodic? || @surface.rectangular?
+      return [[a, b]] if (@surface.periodic? && !@surface.holes?) || @surface.rectangular?
 
       ts = [0.0, 1.0]
       d = b - a
-      Polygon.edges(@surface.boundary).each do |c, e|
-        f = e - c
-        den = d.cross(f)
-        next if den.abs < 1e-12
+      polys = @surface.holes.dup
+      polys << @surface.boundary unless @surface.periodic?
+      polys.each do |pg|
+        Polygon.edges(pg).each do |c, e|
+          f = e - c
+          den = d.cross(f)
+          next if den.abs < 1e-12
 
-        t = (c - a).cross(f) / den
-        s = (c - a).cross(d) / den
-        ts << t if t > 0 && t < 1 && s >= -1e-9 && s <= 1 + 1e-9
+          t = (c - a).cross(f) / den
+          s = (c - a).cross(d) / den
+          ts << t if t > 0 && t < 1 && s >= -1e-9 && s <= 1 + 1e-9
+        end
       end
       ts.sort.uniq.each_cons(2).filter_map do |t0, t1|
+        next nil if (t1 - t0) * d.length < Tol::POINT
+
         mid = a + d * ((t0 + t1) * 0.5)
-        next nil unless Polygon.contains?(@surface.boundary, mid)
+        next nil if !@surface.periodic? && !Polygon.contains?(@surface.boundary, mid)
+        next nil if @surface.in_hole?(mid) || @surface.on_hole_edge?(mid)
 
         [a + d * t0, a + d * t1]
       end

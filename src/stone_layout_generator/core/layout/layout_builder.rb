@@ -17,6 +17,7 @@ module Higeotoko::StoneLayout::Core
       res = doc.extractor.extract_all(doc.segments.values)
       raise InvalidInput, '目地の端点が浮いています（割付が閉じません）' unless res.dangling.empty?
 
+      check_openings(surface, res.faces)
       faces = res.faces.sort_by { |f| [f.bbox[1].round(3), f.bbox[0].round(3)] }
       faces.each do |f|
         pts = Polygon.translate_x(f.points, doc.extractor.normalize_shift(f.points))
@@ -27,6 +28,16 @@ module Higeotoko::StoneLayout::Core
       doc.warnings.concat(auto.warnings)
       doc.warnings.concat(size_warnings(doc))
       [doc, auto.stats]
+    end
+
+    # 開口が 1 枚の石の中に収まって目地とつながっていないと、石が開口をふさいでしまう
+    def check_openings(surface, faces)
+      surface.holes.each do |h|
+        c = Polygon.interior_point(h)
+        next unless c && faces.any? { |f| Polygon.contains?(f.points, c) }
+
+        raise InvalidInput, '開口が 1 枚の石の中に収まっています。「開口の縁に目地を合わせる」をオンにするか、石を小さくしてください'
+      end
     end
 
     def normalize_segment(doc, seg)

@@ -11,22 +11,23 @@ module Higeotoko::StoneLayout::Core
   #
   # boundary は展開座標 (u, v) 上の外周多角形（CCW）。
   # 閉じた断面では u 方向が周期的になり、boundary は [0, L] x [v_min, v_max]。
+  # holes は開口部（窓・扉など）の多角形の配列（CCW）。開口の中には石を置かない。
   class SurfaceDefinition
-    attr_reader :profile, :boundary, :source
+    attr_reader :profile, :boundary, :source, :holes
 
-    def self.rectangle(profile, v_min, v_max, source = {})
+    def self.rectangle(profile, v_min, v_max, source = {}, holes: [])
       l = profile.length
       boundary = [Vec2.new(0, v_min), Vec2.new(l, v_min), Vec2.new(l, v_max), Vec2.new(0, v_max)]
-      new(profile, boundary, source)
+      new(profile, boundary, source, holes: holes)
     end
 
     # テスト・単純な平面壁用: 原点から +x 方向の幅 width、高さ height
-    def self.flat_wall(width, height, origin: Vec2.new(0, 0), v_min: 0.0)
+    def self.flat_wall(width, height, origin: Vec2.new(0, 0), v_min: 0.0, holes: [])
       prof = Profile.new([LineSegment2.new(origin, origin + Vec2.new(width, 0))])
-      rectangle(prof, v_min, v_min + height)
+      rectangle(prof, v_min, v_min + height, {}, holes: holes)
     end
 
-    def initialize(profile, boundary, source = {})
+    def initialize(profile, boundary, source = {}, holes: [])
       @profile = profile
       boundary = boundary.reverse if Polygon.signed_area(boundary).negative?
       raise InvalidInput, '割付範囲の外周が不正です' unless Polygon.area(boundary) > Tol::AREA
@@ -34,6 +35,26 @@ module Higeotoko::StoneLayout::Core
       @boundary = boundary
       @source = source
       @bbox = Polygon.bbox(boundary)
+      @holes = holes.map { |h| Polygon.signed_area(h).negative? ? h.reverse : h }.select { |h| Polygon.area(h) > Tol::AREA }
+      @holes.each do |h|
+        raise InvalidInput, '開口部の形が不正です（自己交差しています）' unless Polygon.simple?(h)
+      end
+    end
+
+    def holes?
+      !@holes.empty?
+    end
+
+    # 点が開口部の内側（縁は含まない）か
+    def in_hole?(p, tol = Tol::POINT)
+      @holes.any? do |h|
+        Polygon.contains?(h, p) && Polygon.edges(h).none? { |a, b| Geom2.point_on_segment?(p, a, b, tol) }
+      end
+    end
+
+    # 点が開口部の縁の上か
+    def on_hole_edge?(p, tol = Tol::POINT)
+      @holes.any? { |h| Polygon.edges(h).any? { |a, b| Geom2.point_on_segment?(p, a, b, tol) } }
     end
 
     def periodic?
@@ -61,11 +82,13 @@ module Higeotoko::StoneLayout::Core
     end
 
     def rectangular?
-      @boundary.size == 4 && (Polygon.area(@boundary) - (@bbox[2] - @bbox[0]) * (@bbox[3] - @bbox[1])).abs < Tol::AREA
+      !holes? && @boundary.size == 4 && (Polygon.area(@boundary) - (@bbox[2] - @bbox[0]) * (@bbox[3] - @bbox[1])).abs < Tol::AREA
     end
 
     # 展開座標の点が割付範囲内か（周期方向は無視）
     def inside?(p, tol = Tol::POINT)
+      return false if holes? && in_hole?(periodic? ? p.shift_x(-((p.x / period).floor * period)) : p, tol)
+
       if periodic?
         p.y >= v_min - tol && p.y <= v_max + tol
       else
@@ -122,11 +145,14 @@ module Higeotoko::StoneLayout::Core
     end
 
     def to_h
-      { 'profile' => @profile.to_h, 'boundary' => @boundary.map(&:to_a), 'source' => @source }
+      h = { 'profile' => @profile.to_h, 'boundary' => @boundary.map(&:to_a), 'source' => @source }
+      h['holes'] = @holes.map { |pg| pg.map(&:to_a) } if holes?
+      h
     end
 
     def self.from_h(h)
-      new(Profile.from_h(h['profile']), h['boundary'].map { |a| Vec2.new(*a) }, h['source'] || {})
+      holes = (h['holes'] || []).map { |pg| pg.map { |a| Vec2.new(*a) } }
+      new(Profile.from_h(h['profile']), h['boundary'].map { |a| Vec2.new(*a) }, h['source'] || {}, holes: holes)
     end
   end
 end

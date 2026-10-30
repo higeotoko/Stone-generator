@@ -62,6 +62,14 @@
       <p class="hint">壁を外から見たときの左右です。角ごとの変更は、編集中に角の近くを右クリック。</p>
     </fieldset>
 
+    <fieldset id="opening-box" hidden style="margin-top:16px"><legend>窓まわり</legend>
+      <label class="check" style="margin-top:0"><input id="align_openings" type="checkbox">窓の縁（上下・左右）に目地をそろえる</label>
+      <div class="grid" style="margin-top:10px">
+        <label>窓まわりの逃げ <span class="unit">mm</span><input id="opening_gap" type="number" min="0" step="0.5"></label>
+      </div>
+      <p class="hint" id="opening-hint"></p>
+    </fieldset>
+
     <div class="grid" style="margin-top:14px">
       <label id="joint-field">目地幅 <span class="unit">mm</span><input id="joint" type="number" min="0" step="0.5" required></label>
       <label>石厚 <span class="unit">mm</span><input id="thickness" type="number" min="1" step="any" required></label>

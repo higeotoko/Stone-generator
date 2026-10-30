@@ -4,7 +4,8 @@
   const byId = id => document.getElementById(id);
   const KEYS = ['stone_width', 'stone_height', 'size_basis', 'min_width', 'min_height', 'max_width', 'max_height',
     'row_offset', 'align_u', 'origin_u', 'align_v', 'origin_v', 'end_mode', 'start_u', 'joint_at_corners',
-    'thickness', 'reference', 'face_offset', 'direction', 'max_arc_angle', 'max_arc_error', 'material'];
+    'thickness', 'reference', 'face_offset', 'direction', 'max_arc_angle', 'max_arc_error', 'material',
+    'align_openings', 'opening_gap'];
   const PATTERNS = [
     { value: 'stack', label: '芋目地', note: '縦目地が通る', rows: [0, 0, 0] },
     { value: 'running', label: '馬踏み目地', note: '半分ずつずらす', rows: [0, 0.5, 0] },
@@ -103,6 +104,11 @@
     byId('corner-field').hidden = !s.has_corners;
     byId('corner-box').hidden = !s.has_corners || !byId('joint_at_corners').checked;
     byId('arc-options').hidden = !(s.has_arcs || s.periodic);
+    byId('opening-box').hidden = !s.openings;
+    if (s.openings) byId('opening-hint').textContent = mode === 'edit'
+      ? '目地をそろえるかどうかは「割付をやり直す」で変更できます。'
+      : `開口を ${s.openings} か所認識しています。開口の中には石を置きません。`;
+    byId('align_openings').disabled = mode === 'edit';
     byId('offset-field').hidden = byId('reference').value !== 'substrate';
     const split = byId('split_joint').checked;
     byId('joint-split').hidden = !split;
@@ -155,6 +161,7 @@
     const ns = 'http://www.w3.org/2000/svg';
     const add = (tag, attrs) => { const n = document.createElementNS(ns, tag); Object.entries(attrs).forEach(([a, v]) => n.setAttribute(a, v)); svg.appendChild(n); return n; };
     add('polygon', { points: p.boundary.map(([x, y]) => `${X(x)},${Y(y)}`).join(' '), fill: 'var(--stone)', stroke: 'var(--outline)', 'stroke-width': 1.2 });
+    (p.holes || []).forEach(h => add('polygon', { points: h.map(([x, y]) => `${X(x)},${Y(y)}`).join(' '), fill: 'var(--surface)', stroke: 'var(--outline)', 'stroke-width': 1.2 }));
     const d = p.lines.map(([ax, ay, bx, by]) => `M${X(ax).toFixed(1)},${Y(ay).toFixed(1)}L${X(bx).toFixed(1)},${Y(by).toFixed(1)}`).join('');
     add('path', { d, stroke: 'var(--accent)', 'stroke-width': Math.max(0.6, Math.min(1.6, k * 8)), fill: 'none' });
   }

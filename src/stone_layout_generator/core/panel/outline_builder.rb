@@ -7,6 +7,7 @@ module Higeotoko::StoneLayout::Core
   #   - 縦目地の辺: joint_v / 2
   #   - 横目地の辺: joint_h / 2
   #   - 外周境界:   edge_clearance
+  #   - 開口部の縁: opening_gap（サッシとのシーリング代など）
   # 同一直線上で量が異なる辺（例: 外周と目地）の間には段差を入れる。
   # 結果は単純多角形・同じ向き・各辺が潰れていないことを検証する。
   module OutlineBuilder
@@ -17,6 +18,8 @@ module Higeotoko::StoneLayout::Core
       dists = Polygon.edges(pts).each_with_index.map do |(a, b), i|
         if fl[i] == 'B'
           settings['edge_clearance']
+        elsif fl[i] == 'O'
+          settings['opening_gap']
         else
           d = b - a
           d.x.abs < d.y.abs ? settings['joint_v'] * 0.5 : settings['joint_h'] * 0.5

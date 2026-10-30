@@ -127,6 +127,8 @@ module Higeotoko::StoneLayout::Core
         [[0, c.a], [1, c.b]].each do |which, e|
           next if jog_points.any? { |j| j.near?(e) }
           next unless copies.any? { |m| !collinear?(m, c) && Geom2.point_on_segment?(e, m.a, m.b) }
+          # 壁の外周や開口の縁に載っている端点は、そちらに固定されている（窓の角など）
+          next if on_fixed_edge?(e)
           # 同一直線上の目地がその先に続いている点（十字点・丸柱の周回継ぎ目）は端点ではない
           next if work.near(point_box(e)).any? do |o|
             (o.id != c.id || o.dx != c.dx) && !moved.key?(o.id) && collinear?(o, c) &&
@@ -356,6 +358,15 @@ module Higeotoko::StoneLayout::Core
       list + list.flat_map { |m| [Placed.new(m.seg, m.dx - l), Placed.new(m.seg, m.dx + l)] }
     end
 
+    # 点が壁の外周・開口の縁の上にあるか
+    def on_fixed_edge?(p)
+      surf = @doc.surface
+      return true if surf.holes? && @doc.shifts.any? { |dx| surf.on_hole_edge?(p.shift_x(-dx)) }
+      return false if surf.periodic?
+
+      Polygon.edges(surf.boundary).any? { |a, b| Geom2.point_on_segment?(p, a, b) }
+    end
+
     def collinear?(p, q)
       Geom2.collinear?(p.a, p.b, q.a, q.b)
     end
@@ -393,7 +404,7 @@ module Higeotoko::StoneLayout::Core
         [seg.a, seg.b, (seg.a + seg.b) * 0.5].each do |p|
           next if @doc.surface.inside?(p, Tol::POINT * 10)
 
-          plan.fail('目地が壁面の範囲外に出ます')
+          plan.fail(@doc.surface.in_hole?(p) ? '目地が開口部（窓・扉）の中に入ります' : '目地が壁面の範囲外に出ます')
           return false
         end
       end

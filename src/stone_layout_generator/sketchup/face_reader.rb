@@ -68,8 +68,27 @@ module Higeotoko
         dir = Core::Vec2.new(*t)
         prof = Core::Profile.new([Core::LineSegment2.new(base, base + dir * (umax - umin))])
         boundary = pts.each_with_index.map { |p, i| Core::Vec2.new(us[i] - umin, p[2]) }
-        warnings << '開口部（内側の輪郭）は現在のバージョンでは無視されます' if face.loops.size > 1
-        Core::SurfaceDefinition.new(prof, boundary, source(face))
+        # 内側の輪郭 = 開口部（窓・扉）
+        holes = inner_loops(face).map do |loop_pts|
+          loop_pts.map { |p| Core::Vec2.new(p[0] * t[0] + p[1] * t[1] - umin, p[2]) }
+        end
+        warnings << "開口部を #{holes.size} か所認識しました（開口の中には石を置きません）" unless holes.empty?
+        Core::SurfaceDefinition.new(prof, boundary, source(face), holes: holes)
+      end
+
+      # 面の内側の輪郭（外周以外のループ）の頂点 → [[x, y, z] mm, ...] の配列
+      def inner_loops(face)
+        outer = face.outer_loop
+        face.loops.reject { |lp| lp == outer }.map do |lp|
+          lp.vertices.map { |v| Units.point_mm(v.position) }
+        end
+      end
+
+      # 複数面の開口: 各点を断面に投影して展開座標へ
+      def holes_on_profile(prof, faces)
+        faces.flat_map { |f| inner_loops(f) }.map do |loop_pts|
+          loop_pts.map { |p| Core::Vec2.new(prof.project(Core::Vec2.new(p[0], p[1]))[0], p[2]) }
+        end
       end
 
       def multi_face(faces, warnings)
@@ -91,7 +110,9 @@ module Higeotoko
         prof = builder.build(runs, closed: closed)
         warnings.concat(builder.warnings)
         check_normals(prof, faces, warnings)
-        Core::SurfaceDefinition.rectangle(prof, zmin, zmax, source(*faces))
+        holes = holes_on_profile(prof, faces)
+        warnings << "開口部を #{holes.size} か所認識しました（開口の中には石を置きません）" unless holes.empty?
+        Core::SurfaceDefinition.rectangle(prof, zmin, zmax, source(*faces), holes: holes)
       end
 
       def bottom_edges(face)

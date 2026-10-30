@@ -46,6 +46,7 @@ module Higeotoko
         view.drawing_color = [255, 120, 0]
         view.line_width = 2
         Core::Polygon.edges(@surface.boundary).each { |a, b| line(view, a, b, s) }
+        @surface.holes.each { |h| Core::Polygon.edges(h).each { |a, b| line(view, a, b, s) } }
         return unless @doc
 
         view.drawing_color = [0, 120, 255]

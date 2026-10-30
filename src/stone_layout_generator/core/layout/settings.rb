@@ -21,6 +21,8 @@ module Higeotoko::StoneLayout::Core
       'joint_v' => 8.0,          # 縦目地幅
       'joint_h' => 8.0,          # 横目地幅
       'edge_clearance' => 0.0,   # 壁面外周からの逃げ
+      'opening_gap' => 0.0,      # 開口部（窓・扉）の縁からの逃げ
+      'align_openings' => true,  # 開口の縁（まぐさ・窓台・抱き）に目地を合わせる
       # 割付基準
       'align_u' => 'left',       # left / right / center / custom
       'align_v' => 'bottom',     # bottom / top / center / custom
@@ -46,7 +48,7 @@ module Higeotoko::StoneLayout::Core
     }.freeze
 
     LAYOUT_KEYS = %w[stone_width stone_height size_basis min_width min_height max_width max_height
-                     align_u align_v origin_u origin_v pattern row_offset end_mode start_u joint_at_corners].freeze
+                     align_u align_v origin_u origin_v pattern row_offset end_mode start_u joint_at_corners align_openings].freeze
 
     ENUMS = {
       'size_basis' => %w[pitch stone],
@@ -147,7 +149,7 @@ module Higeotoko::StoneLayout::Core
           errors << "#{label}が負の値です（#{v}）"
         end
       end
-      %w[joint_v joint_h min_width min_height edge_clearance].each do |k|
+      %w[joint_v joint_h min_width min_height edge_clearance opening_gap].each do |k|
         errors << "#{k} が負の値です" if self[k].negative?
       end
       errors << '縦目地幅が石幅以上です' if self['joint_v'] >= pitch_u

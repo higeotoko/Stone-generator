@@ -27,12 +27,15 @@ module Higeotoko::StoneLayout::Core
         arr.add_segment(clipped[0], clipped[1], id) if clipped
       end
       boundary_edges(window).each { |a, b| arr.add_segment(a, b, :boundary) }
+      hole_edges(window).each { |a, b| arr.add_segment(a, b, :hole) }
       Geom2.rect_edges(window).each { |a, b| arr.add_segment(a, b, :window) }
       arr.compute
 
       faces = arr.faces.map do |f|
         flags = f.edge_tags.map do |tags|
-          if tags.any? { |t| t.is_a?(Integer) }
+          if tags.include?(:hole)
+            'O' # 開口部の縁（目地と重なっていても開口の逃げを優先）
+          elsif tags.any? { |t| t.is_a?(Integer) }
             'J'
           elsif tags.include?(:boundary)
             'B'
@@ -83,6 +86,17 @@ module Higeotoko::StoneLayout::Core
     end
 
     private
+
+    def hole_edges(window)
+      return [] unless @surface.holes?
+
+      shifts = @surface.periodic? ? [-@surface.period, 0.0, @surface.period] : [0.0]
+      @surface.holes.flat_map do |h|
+        shifts.flat_map do |dx|
+          Polygon.edges(h).filter_map { |a, b| Geom2.clip_segment(a.shift_x(dx), b.shift_x(dx), window) }
+        end
+      end
+    end
 
     def boundary_edges(window)
       if @surface.periodic?

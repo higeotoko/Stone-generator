@@ -89,7 +89,8 @@ module Higeotoko
         {
           'kind' => kind,
           'length' => @surface.u_length.round(1), 'height' => (b[3] - b[1]).round(1),
-          'periodic' => @surface.periodic?, 'has_arcs' => arcs, 'has_corners' => prof.corners.any?
+          'periodic' => @surface.periodic?, 'has_arcs' => arcs, 'has_corners' => prof.corners.any?,
+          'openings' => @surface.holes.size
         }
       end
 
@@ -103,6 +104,7 @@ module Higeotoko
         {
           'bbox' => doc.surface.bbox.map { |c| c.round(1) },
           'boundary' => doc.surface.boundary.map { |p| [p.x.round(1), p.y.round(1)] },
+          'holes' => doc.surface.holes.map { |h| h.map { |p| [p.x.round(1), p.y.round(1)] } },
           'lines' => segs.map { |sg| [sg.a.x.round(1), sg.a.y.round(1), sg.b.x.round(1), sg.b.y.round(1)] }
         }
       end
