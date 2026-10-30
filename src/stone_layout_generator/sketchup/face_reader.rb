@@ -22,8 +22,11 @@ module Higeotoko
         warnings = []
         faces = expand_smooth(faces) if expand
         bad = faces.reject { |f| f.normal.z.abs < VERTICAL_TOL }
+        raise Core::InvalidInput, '鉛直な面（壁面）を選択してください' if bad.size == faces.size
+
         unless bad.empty?
-          raise Core::InvalidInput, "鉛直でない面が #{bad.size} 枚含まれています（壁面のみ対象です）"
+          faces -= bad
+          warnings << "天面・底面など鉛直でない面 #{bad.size} 枚は割付の対象から外しました"
         end
 
         surface = faces.size == 1 ? single_face(faces.first, warnings) : multi_face(faces, warnings)

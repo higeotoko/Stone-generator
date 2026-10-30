@@ -34,7 +34,8 @@ module Higeotoko::StoneLayout::Core
       levels.each_cons(2).with_index do |(v0, v1), k|
         shift = row_shift(k)
         us = if @surface.periodic?
-               periodic_positions(shift)
+               pc = @s['joint_at_corners'] ? @surface.profile.corners : []
+               pc.empty? ? periodic_positions(shift) : periodic_corner_positions(pc, shift)
              else
                spans = ([u_lo] + corners + [u_hi]).each_cons(2).to_a
                spans.flat_map.with_index do |(a, c), si|
@@ -134,6 +135,17 @@ module Higeotoko::StoneLayout::Core
         us.pop if rest > Tol::POINT && rest < @s.min_pitch_u && n > 1 # 残りが小さい場合は最後の石と結合
       end
       us.map { |u| (l - u) < Tol::POINT ? 0.0 : u }.sort.uniq
+    end
+
+    # 閉じた断面で折れ点がある（角柱・立方体の外周など）: 各面ごとに割り付け、角には必ず目地
+    def periodic_corner_positions(corners, shift)
+      l = @surface.period
+      cs = corners.sort
+      spans = cs.each_with_index.map { |c, i| [c, i + 1 < cs.size ? cs[i + 1] : cs[0] + l] }
+      us = spans.flat_map do |a, b|
+        [a] + positions(a, b, @s.pitch_u, 'left', 0.0, @s['end_mode'], @s.min_pitch_u, @s.max_pitch_u, shift)
+      end
+      us.map { |u| u % l }.map { |u| (l - u) < Tol::POINT ? 0.0 : u }.sort.uniq
     end
 
     def row_shift(k)

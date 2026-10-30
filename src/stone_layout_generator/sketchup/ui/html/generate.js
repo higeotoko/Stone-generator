@@ -10,6 +10,15 @@
     { value: 'running', label: '馬踏み目地', note: '半分ずつずらす', rows: [0, 0.5, 0] },
     { value: 'offset', label: 'ずらし', note: 'ずらし量を指定', rows: [0, 0.33, 0.66] }
   ];
+  // 平面図（上から見た出隅）。石を2枚、角で納める
+  const CORNERS = [
+    { value: 'miter', label: '留め', note: '斜めに合わせる',
+      shapes: [[[4, 6], [44, 6], [36, 14], [4, 14]], [[48, 10], [48, 50], [40, 50], [40, 18]]] },
+    { value: 'win_prev', label: '左が勝ち', note: '左の小口を見せる',
+      shapes: [[[4, 6], [48, 6], [48, 14], [4, 14]], [[48, 18], [48, 50], [40, 50], [40, 18]]] },
+    { value: 'win_next', label: '右が勝ち', note: '右の小口を見せる',
+      shapes: [[[4, 6], [36, 6], [36, 14], [4, 14]], [[48, 6], [48, 50], [40, 50], [40, 6]]] }
+  ];
   const PRESETS = [[600, 300], [600, 600], [900, 600], [1200, 600], [1200, 900]];
   let info = null, mode = 'create', timer = null;
 
@@ -43,8 +52,33 @@
     return b;
   }
 
+  function cornerCard(c) {
+    const b = document.createElement('button');
+    b.type = 'button'; b.className = 'card corner'; b.dataset.value = c.value;
+    b.setAttribute('role', 'radio'); b.setAttribute('aria-label', c.label);
+    const ns = 'http://www.w3.org/2000/svg';
+    const svg = document.createElementNS(ns, 'svg');
+    svg.setAttribute('viewBox', '0 0 56 56'); svg.setAttribute('aria-hidden', 'true');
+    c.shapes.forEach(pts => {
+      const pg = document.createElementNS(ns, 'polygon');
+      pg.setAttribute('points', pts.map(p => p.join(',')).join(' '));
+      pg.setAttribute('fill', 'var(--fill)'); pg.setAttribute('stroke', 'var(--outline)'); pg.setAttribute('stroke-width', '1');
+      svg.appendChild(pg);
+    });
+    b.appendChild(svg);
+    const t = document.createElement('strong'); t.textContent = c.label; b.appendChild(t);
+    const s = document.createElement('small'); s.textContent = c.note; b.appendChild(s);
+    b.addEventListener('click', () => { chooseCorner(c.value); changed(); });
+    return b;
+  }
+
+  function chooseCorner(value) {
+    document.querySelectorAll('.card.corner').forEach(c => c.setAttribute('aria-checked', String(c.dataset.value === value)));
+    byId('corners').dataset.value = value;
+  }
+
   function choose(value) {
-    document.querySelectorAll('.card').forEach(c => c.setAttribute('aria-checked', String(c.dataset.value === value)));
+    document.querySelectorAll('.card:not(.corner)').forEach(c => c.setAttribute('aria-checked', String(c.dataset.value === value)));
     byId('patterns').dataset.value = value;
     sync();
   }
@@ -67,6 +101,7 @@
     byId('origin-v-field').hidden = byId('align_v').value !== 'custom';
     byId('start-u-field').hidden = !s.periodic;
     byId('corner-field').hidden = !s.has_corners;
+    byId('corner-box').hidden = !s.has_corners || !byId('joint_at_corners').checked;
     byId('arc-options').hidden = !(s.has_arcs || s.periodic);
     byId('offset-field').hidden = byId('reference').value !== 'substrate';
     const split = byId('split_joint').checked;
@@ -95,6 +130,7 @@
       else o[k] = el.value === '' ? null : el.value;
     });
     o.pattern = byId('patterns').dataset.value || 'stack';
+    o.corner_mode = byId('corners').dataset.value || 'miter';
     if (byId('split_joint').checked) { o.joint_v = num('joint_v'); o.joint_h = num('joint_h'); }
     else { o.joint_v = num('joint'); o.joint_h = num('joint'); }
     return JSON.stringify(o);
@@ -144,6 +180,8 @@
     byId('joint_v').value = s.joint_v; byId('joint_h').value = s.joint_h;
     byId('split_joint').checked = Number(s.joint_v) !== Number(s.joint_h);
     choose(s.pattern);
+    byId('corners').replaceChildren(...CORNERS.map(cornerCard));
+    chooseCorner(s.corner_mode || 'miter');
     const size = `${Math.round(sf.length).toLocaleString()} × ${Math.round(sf.height).toLocaleString()} mm`;
     if (mode === 'edit') {
       byId('mode').textContent = `編集中 · ${sf.kind} ${size}${data.manual ? ' · 手で調整した目地あり' : ''}`;

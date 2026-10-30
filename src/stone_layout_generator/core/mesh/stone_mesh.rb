@@ -19,8 +19,11 @@ module Higeotoko::StoneLayout::Core
       @opts = { max_angle: max_angle, max_error: max_error }
     end
 
-    def build(outline)
+    # ends: 角の納まりによる石端の上書き { u_end => { s => Vec2(xy) } }（CornerJoint.end_overrides）
+    def build(outline, ends = {})
       raise GeometryError, '石厚がゼロです' if (@s_out - @s_in).abs < Tol::POINT
+
+      @ends = ends
 
       pts = outline
       umin, umax = pts.map(&:x).minmax
@@ -29,6 +32,7 @@ module Higeotoko::StoneLayout::Core
       crit = merge_sorted(pts.map(&:x) + @profile.breakpoints(umin, umax, **@opts))
       check_fold(crit)
       @crit = crit
+      check_ends(crit)
       edges = Polygon.edges(pts)
       traps = trapezoids(edges, crit)
       vset = Array.new(crit.size) { [] }
@@ -104,7 +108,34 @@ module Higeotoko::StoneLayout::Core
     end
 
     def xyz(u, v, s)
+      unless @ends.empty?
+        @ends.each do |ue, sides|
+          next unless (ue - u).abs <= Tol::POINT
+
+          q = sides[s]
+          return [q.x, q.y, v] if q
+        end
+      end
       @surface.point3d(u, v, s)
+    end
+
+    # 角の納まりで端を動かした結果、石が裏返らないか
+    def check_ends(crit)
+      return if @ends.empty?
+      raise GeometryError, '角の納まりを付けるには石が短すぎます' if crit.size < 2
+
+      @ends.each do |ue, sides|
+        last = (ue - crit.last).abs <= Tol::POINT
+        inner_u = last ? crit[-2] : crit[1]
+        dir = last ? 1 : -1
+        sides.each do |s, q|
+          base = @profile.offset_point(inner_u, s)
+          t = @profile.tangent(inner_u)
+          next if (q - base).dot(t) * dir > Tol::MIN_EDGE
+
+          raise GeometryError, '角の納まり（勝ち負け・留め）に対して石が短すぎます'
+        end
+      end
     end
 
     def add_cap(mesh, trap, crit, vset, vertical)

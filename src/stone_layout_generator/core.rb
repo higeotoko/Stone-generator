@@ -41,6 +41,7 @@ dir = File.join(__dir__, 'core')
   layout/edit_engine
   layout/snapper
   mesh/mesh
+  mesh/corner_joint
   mesh/stone_mesh
   mesh/stone_geometry
   persistence/serializer

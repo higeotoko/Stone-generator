@@ -57,6 +57,11 @@
       <label id="row-offset-field" hidden style="margin-top:14px">段ごとのずらし量 <span class="unit">mm</span><input id="row_offset" type="number" min="0" step="any"></label>
     </div>
 
+    <fieldset id="corner-box" hidden style="margin-top:16px"><legend>角の納まり</legend>
+      <div class="cards" id="corners" role="radiogroup" aria-label="角の納まり"></div>
+      <p class="hint">壁を外から見たときの左右です。角ごとの変更は、編集中に角の近くを右クリック。</p>
+    </fieldset>
+
     <div class="grid" style="margin-top:14px">
       <label id="joint-field">目地幅 <span class="unit">mm</span><input id="joint" type="number" min="0" step="0.5" required></label>
       <label>石厚 <span class="unit">mm</span><input id="thickness" type="number" min="1" step="any" required></label>

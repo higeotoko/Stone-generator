@@ -31,6 +31,8 @@ module Higeotoko::StoneLayout::Core
       'end_mode' => 'cut',       # cut: 端部に半端石 / balanced: 左右均等 / uniform: 全体均等
       'start_u' => 0.0,          # 丸柱の割付開始位置（周方向）
       'joint_at_corners' => true, # 折れ角（R でない入隅・出隅）に縦目地を入れる
+      'corner_mode' => 'miter',  # 角の納まり: miter 留め / win_prev 左の石が勝ち / win_next 右の石が勝ち
+      'corner_overrides' => {},  # 角ごとの納まり { "角の番号" => corner_mode }
       # 生成位置
       'reference' => 'finish',   # finish: 選択面＝仕上げ面 / substrate: 選択面＝躯体面
       'face_offset' => 0.0,      # 選択面から仕上げ面までの距離（substrate 用, +が外側）
@@ -53,7 +55,8 @@ module Higeotoko::StoneLayout::Core
       'pattern' => %w[stack running offset],
       'end_mode' => %w[cut balanced uniform],
       'reference' => %w[finish substrate],
-      'direction' => %w[inward outward]
+      'direction' => %w[inward outward],
+      'corner_mode' => %w[miter win_prev win_next]
     }.freeze
 
     def initialize(values = {})
@@ -71,7 +74,14 @@ module Higeotoko::StoneLayout::Core
     end
 
     def to_h
-      @values.dup
+      h = @values.dup
+      h['corner_overrides'] = h['corner_overrides'].dup
+      h
+    end
+
+    # 角 index の納まり
+    def corner_mode_at(index)
+      self['corner_overrides'][index.to_s] || self['corner_mode']
     end
 
     def layout_changed?(other)
@@ -151,6 +161,9 @@ module Higeotoko::StoneLayout::Core
         errors << '最大石高さが基本石高さより小さいです'
       end
       ENUMS.each { |k, vals| errors << "#{k} の値が不正です: #{self[k]}" unless vals.include?(self[k]) }
+      self['corner_overrides'].each_value do |m|
+        errors << "角の納まりの値が不正です: #{m}" unless ENUMS['corner_mode'].include?(m)
+      end
       errors
     end
 
@@ -166,7 +179,9 @@ module Higeotoko::StoneLayout::Core
     def normalize!
       DEFAULTS.each do |k, d|
         v = @values[k]
-        if d.is_a?(Float) || %w[max_width max_height].include?(k)
+        if d.is_a?(Hash)
+          @values[k] = v.is_a?(Hash) ? v.to_h { |kk, vv| [kk.to_s, vv.to_s] } : {}
+        elsif d.is_a?(Float) || %w[max_width max_height].include?(k)
           @values[k] = v.nil? || v == '' ? (d.nil? ? nil : d) : Float(v)
         elsif d == true || d == false
           @values[k] = [true, 'true', '1', 1].include?(v)

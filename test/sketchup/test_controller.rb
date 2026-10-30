@@ -146,4 +146,17 @@ class TestController < Minitest::Test
     assert_raises(PersistenceError) { SL::LayoutController.new(@ctrl.group) }
     assert_equal 30, stones.size
   end
+  def test_corner_mode_rebuilds_only_that_corner
+    prof = Profile.new([LineSegment2.new(v2(0, 0), v2(1500, 0)), LineSegment2.new(v2(1500, 0), v2(1500, 1500))])
+    ctrl, = SL::LayoutController.create(@model, @model.entities, SurfaceDefinition.rectangle(prof, 0, 1200), Settings.new)
+    before = stones(ctrl).transform_values { |g| g.faces.map(&:points) }
+    touched = CornerJoint.panels_at(ctrl.doc, 0)
+    ctrl.set_corner_mode(0, 'win_prev')
+    after = stones(ctrl).transform_values { |g| g.faces.map(&:points) }
+    changed = after.keys.reject { |k| after[k] == before[k] }
+    assert_equal touched.sort, changed.sort
+    assert_equal 'win_prev', SL::LayoutController.new(ctrl.group).doc.settings.corner_mode_at(0)
+    ctrl.set_corner_mode(0, nil)
+    assert_equal 'miter', ctrl.doc.settings.corner_mode_at(0)
+  end
 end

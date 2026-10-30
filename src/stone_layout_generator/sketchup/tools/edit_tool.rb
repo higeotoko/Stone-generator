@@ -168,6 +168,7 @@ module Higeotoko
           uv = @menu_uv
           menu.add_item('ここに縦目地を追加') { add_joint(uv, :v) }
           menu.add_item('ここに横目地を追加') { add_joint(uv, :h) }
+          add_corner_menu(menu, uv)
           menu.add_separator
         end
         menu.add_item('割付設定を変更...') { GenerateDialog.edit(@ctrl) }
@@ -213,6 +214,39 @@ module Higeotoko
           @selection = @selection.first(1)
         end
         notify_panel
+        Sketchup.active_model.active_view.invalidate
+      end
+
+      CORNER_MODES = [%w[miter 留め], %w[win_prev 左の石を勝ちに], %w[win_next 右の石を勝ちに]].freeze
+      CORNER_PICK_MM = 400.0
+
+      # 角の近くで右クリック → その角だけ納まりを変える
+      def add_corner_menu(menu, uv)
+        c = Core::CornerJoint.nearest(@ctrl.doc.surface.profile, uv.x, CORNER_PICK_MM)
+        return unless c
+
+        s = @ctrl.doc.settings
+        current = s.corner_mode_at(c.index)
+        own = s['corner_overrides'].key?(c.index.to_s)
+        sub = menu.add_submenu("この角の納まり（#{c.outer ? '出隅' : '入隅'}）")
+        CORNER_MODES.each do |mode, label|
+          item = sub.add_item(label) { set_corner(c.index, mode) }
+          sub.set_validation_proc(item) { current == mode ? MF_CHECKED : MF_ENABLED }
+        end
+        sub.add_separator
+        item = sub.add_item('全体の設定に戻す') { set_corner(c.index, nil) }
+        sub.set_validation_proc(item) { own ? MF_ENABLED : MF_GRAYED }
+      end
+
+      def set_corner(index, mode)
+        @ctrl.set_corner_mode(index, mode)
+        @message = nil
+      rescue Core::Error => e
+        @message = e.message
+        UI.messagebox("角の納まりを変更できませんでした。\n#{e.message}")
+      ensure
+        notify_panel
+        update_status
         Sketchup.active_model.active_view.invalidate
       end
 

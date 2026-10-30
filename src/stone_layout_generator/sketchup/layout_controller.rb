@@ -72,6 +72,7 @@ module Higeotoko
         @index = nil if @index&.values&.any? { |g| !g.valid? }
         @index ||= ModelStore.stone_index(@group)
       end
+      alias index_map index
 
       # 割付グループのワールド変換（グループ内で編集中でも正しく描画するため）
       def world_transform
@@ -116,6 +117,25 @@ module Higeotoko
         @doc.revision += 1
         transact('石割付: 設定変更') do
           GeometryBuilder.new(@group, @doc).rebuild(built, index)
+          ModelStore.save(@group, @doc)
+        end
+      end
+
+      # 1つの角の納まりを変える（その角に接する石だけ作り直す）。mode=nil で全体の設定に戻す
+      def set_corner_mode(index, mode)
+        ov = @doc.settings['corner_overrides'].dup
+        mode ? ov[index.to_s] = mode : ov.delete(index.to_s)
+        old = @doc.settings
+        @doc.settings = old.merge('corner_overrides' => ov)
+        begin
+          built = build_or_raise(Core::CornerJoint.panels_at(@doc, index))
+        rescue StandardError
+          @doc.settings = old
+          raise
+        end
+        @doc.revision += 1
+        transact('石割付: 角の納まり') do
+          GeometryBuilder.new(@group, @doc).rebuild(built, index_map)
           ModelStore.save(@group, @doc)
         end
       end

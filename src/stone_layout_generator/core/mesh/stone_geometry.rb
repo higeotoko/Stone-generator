@@ -14,7 +14,8 @@ module Higeotoko::StoneLayout::Core
 
     def build(panel)
       outline = OutlineBuilder.build(panel.points, panel.flags, @doc.settings)
-      mesh = @mesher.build(outline)
+      ends = CornerJoint.end_overrides(@doc.surface, @doc.settings, panel.points, outline)
+      mesh = @mesher.build(outline, ends)
       errs = mesh.manifold_errors
       raise GeometryError.new("石の形状が閉じません（#{errs.size}辺）", panel.id) unless errs.empty?
 
