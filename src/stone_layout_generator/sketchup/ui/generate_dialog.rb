@@ -39,7 +39,7 @@ module Higeotoko
         @dialog = UI::HtmlDialog.new(
           dialog_title: @mode == :create ? '石割付の生成' : '石割付の設定',
           preferences_key: "Higeotoko_StoneLayout_#{@mode}",
-          width: 380, height: 720, resizable: true, style: UI::HtmlDialog::STYLE_UTILITY
+          width: 380, height: 680, resizable: true, style: UI::HtmlDialog::STYLE_UTILITY
         )
         @dialog.set_file(HTML)
         @dialog.add_action_callback('ready') { |_ctx| init_dialog }
@@ -65,17 +65,40 @@ module Higeotoko
           'warnings' => @warnings,
           'surface' => surface_info,
           'manual' => @ctrl ? @ctrl.doc.manual_edits? : false,
-          'layout_keys' => Core::Settings::LAYOUT_KEYS
+          'layout_keys' => Core::Settings::LAYOUT_KEYS,
+          'preview' => @ctrl ? preview_data(@ctrl.doc) : nil,
+          'stats' => @ctrl ? { 'stones' => @ctrl.doc.panels.size } : nil
         }
         @dialog.execute_script("init(#{JSON.generate(info)})")
       end
 
       def surface_info
         b = @surface.bbox
+        prof = @surface.profile
+        arcs = prof.segments.any? { |sg| sg.is_a?(Core::ArcSegment2) }
+        kind = if @surface.periodic? then '丸柱'
+               elsif arcs then 'R付きの壁'
+               elsif prof.corners.any? then '折れ壁'
+               else '平面壁'
+               end
         {
+          'kind' => kind,
           'length' => @surface.u_length.round(1), 'height' => (b[3] - b[1]).round(1),
-          'periodic' => @surface.periodic?,
-          'segments' => @surface.profile.segments.map(&:type).join(' + ')
+          'periodic' => @surface.periodic?, 'has_arcs' => arcs, 'has_corners' => prof.corners.any?
+        }
+      end
+
+      PREVIEW_LIMIT = 6000
+
+      # ダイアログ内の展開図プレビュー用（u, v の線分）
+      def preview_data(doc)
+        segs = doc.segments.values
+        return nil if segs.size > PREVIEW_LIMIT
+
+        {
+          'bbox' => doc.surface.bbox.map { |c| c.round(1) },
+          'boundary' => doc.surface.boundary.map { |p| [p.x.round(1), p.y.round(1)] },
+          'lines' => segs.map { |sg| [sg.a.x.round(1), sg.a.y.round(1), sg.b.x.round(1), sg.b.y.round(1)] }
         }
       end
 
@@ -89,7 +112,7 @@ module Higeotoko
         return report('error' => errs) unless errs.empty?
 
         stats, warnings = @preview ? @preview.update(s) : [{}, []]
-        report('stats' => stats, 'warnings' => warnings.first(20))
+        report('stats' => stats, 'warnings' => warnings.first(20), 'preview' => @preview&.doc && preview_data(@preview.doc))
       rescue Core::Error => e
         report('error' => [e.message])
       end

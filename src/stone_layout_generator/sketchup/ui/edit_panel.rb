@@ -46,7 +46,7 @@ module Higeotoko
 
         @ready = false
         @dialog = UI::HtmlDialog.new(dialog_title: '目地編集', preferences_key: 'Higeotoko_StoneLayout_edit',
-                                     width: 280, height: 460, resizable: true, style: UI::HtmlDialog::STYLE_UTILITY)
+                                     width: 300, height: 560, resizable: true, style: UI::HtmlDialog::STYLE_UTILITY)
         @dialog.set_file(HTML)
         @dialog.add_action_callback('ready') do |_ctx|
           @ready = true

@@ -223,6 +223,7 @@ module Higeotoko
         seg = @engine.segment_of(pc)
         {
           'orientation' => pc.orientation == :v ? '縦目地' : '横目地',
+          'orient' => pc.orientation.to_s,
           'position' => pc.position.round(1),
           'length' => @selection.sum(&:length).round(1),
           'count' => @selection.size,
