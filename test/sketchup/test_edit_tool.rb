@@ -348,6 +348,79 @@ class TestEditTool < Minitest::Test
     assert_match(/report\(.*反映/, gd.scripts.last)
   end
 
+  def open_settings_dialog
+    made = []
+    orig = UI::HtmlDialog.method(:new)
+    UI::HtmlDialog.stub(:new, ->(*args) { orig.call(*args).tap { |d| made << d } }) { SL::GenerateDialog.edit(@ctrl) }
+    gd = made.last
+    gd.fire('ready')
+    [gd, JSON.parse(gd.scripts.last[/\Ainit\((.*)\)\z/m, 1])]
+  end
+
+  # 精査で見つけた不具合: 編集モードの「反映」で角ごとの納まりが消えていた
+  def test_settings_apply_keeps_corner_overrides
+    model = Sketchup::Model.new
+    Sketchup.active_model = model
+    prof = Profile.new([LineSegment2.new(v2(0, 0), v2(1500, 0)), LineSegment2.new(v2(1500, 0), v2(1500, 1500))])
+    @ctrl, = SL::LayoutController.create(model, model.entities, SurfaceDefinition.rectangle(prof, 0, 1200), Settings.new)
+    @ctrl.set_corner_mode(0, 'win_prev')
+    @ctrl.change_settings('snap_step' => 5)
+    gd, data = open_settings_dialog
+    sent = data['settings'].reject { |k, _| %w[corner_overrides snap_step].include?(k) } # ダイアログが送る項目だけ
+    gd.fire('apply', JSON.generate(sent.merge('thickness' => 35)))
+    assert_equal 35.0, @ctrl.doc.settings['thickness']
+    assert_equal({ '0' => 'win_prev' }, @ctrl.doc.settings['corner_overrides'])
+    assert_equal 5.0, @ctrl.doc.settings['snap_step']
+    # 全体再割付でも引き継ぐ
+    gd.fire('relayout', JSON.generate(sent.merge('stone_width' => 600)))
+    assert_equal 600.0, @ctrl.doc.settings['stone_width']
+    assert_equal({ '0' => 'win_prev' }, @ctrl.doc.settings['corner_overrides'])
+  end
+
+  def test_unexpected_dialog_error_is_reported
+    gd, = open_settings_dialog
+    gd.fire('apply', '{broken json')
+    assert_match(/report\(.*error/, gd.scripts.last)
+  end
+
+  # 生成そのものを元に戻すと割付グループが消える → ツールは自分で終わる
+  def test_tool_exits_when_layout_is_undone
+    @model.tool = @tool
+    @model.undo # 生成の取り消し
+    @tool.onMouseMove(0, *at(900, 300), @view)
+    assert_nil @model.tool
+    @tool.draw(@view)
+    @tool.onLButtonDown(0, *at(900, 300), @view) # 落ちない
+  end
+
+  # 描画範囲は割付グループの位置を二重に掛けない
+  def test_extents_inside_moved_wall_group
+    model = Sketchup::Model.new
+    Sketchup.active_model = model
+    wall = model.entities.add_group
+    wall.transformation = Geom::Transformation.new([1000 / 25.4, 0, 0])
+    ctrl, = SL::LayoutController.create(model, wall.entities, SurfaceDefinition.flat_wall(5000, 3000), Settings.new)
+    bb = SL::EditTool.new(ctrl).getExtents
+    assert_in_delta 1000, SL::Units.to_mm(bb.min.x), 1e-6
+    assert_in_delta 6000, SL::Units.to_mm(bb.max.x), 1e-6
+  end
+
+  def test_menu_actions_are_guarded
+    select_at(900, 300)
+    @tool.onCancel(0, @view)
+    blocks = []
+    menu = Object.new
+    menu.define_singleton_method(:add_item) { |*_a, &b| blocks << b; blocks.size }
+    menu.define_singleton_method(:add_separator) {}
+    menu.define_singleton_method(:add_submenu) { |*_| self }
+    menu.define_singleton_method(:set_validation_proc) { |*_| }
+    @tool.getMenu(menu)
+    @ctrl.stub(:commit_plan, ->(*) { raise NoMethodError, 'menu boom' }) do
+      blocks.first.call # 目地を削除
+    end
+    assert_match(/menu boom/, @tool.message)
+  end
+
   class FakeMenu
     def add_item(*) = 1
     def add_separator; end

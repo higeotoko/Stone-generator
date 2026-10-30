@@ -13,17 +13,24 @@ module Higeotoko
         @commands ||= {
           generate: command('石割付を生成', 'generate',
                             '選択した壁面に石を自動で割り付けます（R面・丸柱も可）') { Commands.generate }.tap do |c|
-            c.set_validation_proc { face_selected? ? MF_ENABLED : MF_GRAYED }
+            c.set_validation_proc { state { face_selected? } }
           end,
           edit: command('目地を編集', 'edit',
                         '石割付の目地をドラッグ・数値入力で直接編集します') { Commands.edit }.tap do |c|
-            c.set_validation_proc { layout_selected? ? MF_ENABLED : MF_GRAYED }
+            c.set_validation_proc { state { layout_selected? } }
           end,
           settings: command('割付設定を変更', 'settings',
                             '石厚・目地幅などを変更します（調整した目地位置は保持）') { Commands.settings }.tap do |c|
-            c.set_validation_proc { layout_selected? ? MF_ENABLED : MF_GRAYED }
+            c.set_validation_proc { state { layout_selected? } }
           end
         }
+      end
+
+      # 有効/無効の判定は SketchUp が頻繁に呼ぶ。失敗しても押せる状態にしてエラーを連発させない
+      def state
+        yield ? MF_ENABLED : MF_GRAYED
+      rescue StandardError
+        MF_ENABLED
       end
 
       def command(label, icon, help, &block)
@@ -62,6 +69,8 @@ module Higeotoko
       end
 
       def layout_selected?
+        return true if EditTool.active&.controller&.valid?
+
         model = Sketchup.active_model
         (model.active_path || []).each { |e| return true if ModelStore.layout_group?(e) }
         model.selection.each_with_index do |e, i|

@@ -120,6 +120,8 @@ module Higeotoko
         report('stats' => stats, 'warnings' => warnings.first(20), 'preview' => @preview&.doc && preview_data(@preview.doc))
       rescue Core::Error => e
         report('error' => [e.message])
+      rescue StandardError => e
+        unexpected(e)
       end
 
       def apply(json)
@@ -134,12 +136,16 @@ module Higeotoko
           UI.messagebox("#{ctrl.doc.panels.size} 枚の石を生成しました。\n" + warnings.first(10).join("\n")) unless warnings.empty?
           model.select_tool(EditTool.new(ctrl))
         else
-          changes = s.to_h.reject { |k, _| Core::Settings::LAYOUT_KEYS.include?(k) }
+          # 送られてきた項目だけを変える（角ごとの納まりなど、ダイアログにない設定を消さない）
+          sent = JSON.parse(json).keys.map(&:to_s)
+          changes = s.to_h.select { |k, _| sent.include?(k) && !Core::Settings::LAYOUT_KEYS.include?(k) }
           @ctrl.change_settings(changes)
           report('message' => '設定を反映しました（目地位置は保持されています）')
         end
       rescue Core::Error => e
         report('error' => e.message.split("\n"))
+      rescue StandardError => e
+        unexpected(e)
       end
 
       def relayout(json)
@@ -153,6 +159,13 @@ module Higeotoko
         report('message' => "全体を再割付しました（#{@ctrl.doc.panels.size} 枚）")
       rescue Core::Error => e
         report('error' => e.message.split("\n"))
+      rescue StandardError => e
+        unexpected(e)
+      end
+
+      def unexpected(e)
+        Core::Log.error("ダイアログの操作に失敗: #{e.class}: #{e.message}", at: (e.backtrace || []).first(4))
+        report('error' => ["#{e.class}: #{e.message}（詳細は Ruby コンソール）"])
       end
 
       def report(h)

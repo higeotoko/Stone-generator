@@ -112,7 +112,12 @@ module Higeotoko
         raise Core::Error, plan.errors.join("\n") unless plan.ok?
 
         engine = Core::EditEngine.new(@doc)
-        change = engine.apply(plan)
+        begin
+          change = engine.apply(plan)
+        rescue StandardError
+          reload! # 文書が中途半端に書き換わったままにしない
+          raise
+        end
         transact(name) do
           built = build_or_raise(change.all_rebuild)
           builder = GeometryBuilder.new(@group, @doc)
@@ -190,7 +195,8 @@ module Higeotoko
 
       # 全体再割付（手動編集は失われる。呼び出し側で利用者に確認すること）
       def relayout(settings_hash)
-        settings = Core::Settings.new(settings_hash)
+        # ダイアログが送らない設定（角ごとの納まり・スナップ刻みなど）は今の値を引き継ぐ
+        settings = Core::Settings.new(@doc.settings.to_h.merge(settings_hash.transform_keys(&:to_s)))
         new_doc, = Core::LayoutBuilder.build(@doc.surface, settings, id: @doc.id)
         new_doc.revision = @doc.revision + 1
         built, errors = Core::StoneGeometry.new(new_doc).build_many(new_doc.panels.keys)

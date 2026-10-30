@@ -4,11 +4,13 @@ module Higeotoko
   module StoneLayout
     # 目地の直接編集ツール（Sketchup::Tool インターフェース）。
     #
-    # クリック: 部分目地を選択 / Shift+クリック: 通り目地として選択 / Ctrl(Option)+クリック: 追加選択
-    # ドラッグ: 目地移動（プレビューは View 描画のみ。確定はマウスを離したとき）
-    # 数値入力（VCB）: 選択目地を指定量だけ移動（ドラッグ中なら移動方向に適用）
-    # Delete: 選択目地を削除して石を結合 / Esc: ドラッグ取消 → 選択解除
-    # 右クリック: 目地追加・削除・ロック・設定・整合性チェック
+    # クリック: 目地を選んで拾う → 動かす → クリックで確定（押したままドラッグして離しても可）
+    # 選ぶ単位: 編集パネルの「部分目地／通り目地」。Shift+クリックで一時的に逆の単位
+    # Ctrl(Option)+クリック: 追加選択 / 数値入力（VCB）: 選択目地を指定量だけ移動
+    # Delete: 選択目地を消して石を結合 / Esc: 移動の取り消し → 選択解除
+    # 右クリック: 目地追加・削除・ロック・角の納まり・設定・整合性チェック
+    #
+    # SketchUp から呼ばれる入口はすべて guard で包み、想定外のエラーでもツールを止めない。
     class EditTool
       PICK_PX = 7
       SNAP_PX = 10
@@ -27,6 +29,10 @@ module Higeotoko
         @ctrl
       end
 
+      class << self
+        attr_accessor :active # いま有効な目地編集ツール（コマンド・ツールバーから参照）
+      end
+
       def initialize(controller)
         @ctrl = controller
         @selection = []
@@ -42,26 +48,34 @@ module Higeotoko
       # ---- ライフサイクル --------------------------------------------------------
 
       def activate
-        engine
-        # 割付グループが選択されたままだと、石の線がすべて選択色（青）で表示されて目地のハイライトと紛らわしい
-        model = @ctrl.model
-        @restore_selection = model.selection.to_a.select(&:valid?)
-        model.selection.clear
-        warn_integrity
-        EditPanel.instance.attach(self)
-        update_status
+        EditTool.active = self
+        guard(nil) do
+          engine
+          # 割付グループが選択されたままだと、石の線がすべて選択色（青）で表示されて目地のハイライトと紛らわしい
+          model = @ctrl.model
+          @restore_selection = model.selection.to_a.select(&:valid?)
+          model.selection.clear
+          warn_integrity
+          EditPanel.instance.attach(self)
+          update_status
+        end
       end
 
       def deactivate(view)
+        EditTool.active = nil if EditTool.active.equal?(self)
         cancel_drag
-        EditPanel.instance.detach(self)
-        restore_selection
+        guard(nil) do
+          EditPanel.instance.detach(self)
+          restore_selection
+        end
         view.invalidate
       end
 
       def resume(view)
-        sync!
-        update_status
+        guard(view) do
+          sync!
+          update_status
+        end
         view.invalidate
       end
 
@@ -70,14 +84,16 @@ module Higeotoko
       end
 
       def onCancel(_reason, view)
-        if @drag
-          cancel_drag
-          @message = '移動を取り消しました'
-        else
-          @selection = []
+        guard(view) do
+          if @drag
+            cancel_drag
+            @message = '移動を取り消しました'
+          else
+            @selection = []
+          end
+          notify_panel
+          update_status
         end
-        notify_panel
-        update_status
         view.invalidate
       end
 
@@ -229,24 +245,31 @@ module Higeotoko
       end
 
       def getMenu(menu, _flags = nil, _x = nil, _y = nil, _view = nil)
-        unless @selection.empty?
-          menu.add_item('目地を削除（石を結合）') { delete_selection }
-          locked = @selection.any? { |pc| engine.segment_of(pc)&.locked }
-          menu.add_item(locked ? '目地のロックを解除' : '目地をロック') { lock_selection(!locked) }
-          menu.add_item(@mode == :through ? '部分目地として扱う' : '通り目地として扱う') { toggle_mode }
-          menu.add_separator
+        guard(nil) do
+          unless @selection.empty?
+            menu.add_item('目地を削除（石を結合）') { safely { delete_selection } }
+            locked = @selection.any? { |pc| engine.segment_of(pc)&.locked }
+            menu.add_item(locked ? '目地のロックを解除' : '目地をロック') { safely { lock_selection(!locked) } }
+            menu.add_item(@mode == :through ? '部分目地として扱う' : '通り目地として扱う') { safely { toggle_mode } }
+            menu.add_separator
+          end
+          if @menu_uv
+            uv = @menu_uv
+            menu.add_item('ここに縦目地を追加') { safely { add_joint(uv, :v) } }
+            menu.add_item('ここに横目地を追加') { safely { add_joint(uv, :h) } }
+            add_corner_menu(menu, uv)
+            menu.add_separator
+          end
+          menu.add_item('割付設定を変更...') { safely { GenerateDialog.edit(@ctrl) } }
+          menu.add_item('整合性チェック') { safely { warn_integrity(force: true) } }
+          menu.add_item('編集を終了') { Sketchup.active_model.select_tool(nil) }
         end
-        if @menu_uv
-          uv = @menu_uv
-          menu.add_item('ここに縦目地を追加') { add_joint(uv, :v) }
-          menu.add_item('ここに横目地を追加') { add_joint(uv, :h) }
-          add_corner_menu(menu, uv)
-          menu.add_separator
-        end
-        menu.add_item('割付設定を変更...') { GenerateDialog.edit(@ctrl) }
-        menu.add_item('整合性チェック') { warn_integrity(force: true) }
-        menu.add_item('編集を終了') { Sketchup.active_model.select_tool(nil) }
         true
+      end
+
+      # メニューやパネルから後で呼ばれる処理用
+      def safely(&block)
+        guard(Sketchup.active_model&.active_view, &block)
       end
 
       # ---- 公開操作（編集パネルからも呼ばれる） --------------------------------------
@@ -300,6 +323,8 @@ module Higeotoko
       end
 
       def lock_selection(value)
+        return if @selection.empty?
+
         plan = engine.plan_lock(@selection, value, mode: @mode)
         commit(plan, value ? '石割付: 目地ロック' : '石割付: ロック解除')
       end
@@ -329,11 +354,11 @@ module Higeotoko
         own = s['corner_overrides'].key?(c.index.to_s)
         sub = menu.add_submenu("この角の納まり（#{c.outer ? '出隅' : '入隅'}）")
         CORNER_MODES.each do |mode, label|
-          item = sub.add_item(label) { set_corner(c.index, mode) }
+          item = sub.add_item(label) { safely { set_corner(c.index, mode) } }
           sub.set_validation_proc(item) { current == mode ? MF_CHECKED : MF_ENABLED }
         end
         sub.add_separator
-        item = sub.add_item('全体の設定に戻す') { set_corner(c.index, nil) }
+        item = sub.add_item('全体の設定に戻す') { safely { set_corner(c.index, nil) } }
         sub.set_validation_proc(item) { own ? MF_ENABLED : MF_GRAYED }
       end
 
@@ -370,6 +395,17 @@ module Higeotoko
       def draw(view)
         return unless @ctrl.valid?
 
+        draw_overlays(view)
+      rescue StandardError => e
+        # 描画は毎フレーム呼ばれるので、同じエラーを何度も出さない
+        unless @draw_error == e.message
+          @draw_error = e.message
+          Core::Log.error("描画エラー: #{e.class}: #{e.message}", at: (e.backtrace || []).first(4))
+        end
+      end
+
+      def draw_overlays(view)
+
         s = draw_offset
         if @drag && @ext_snap && input_point&.display?
           input_point.draw(view)
@@ -387,19 +423,32 @@ module Higeotoko
         end
       end
 
+      # 描画範囲（ワールド座標）。group.bounds は親の座標系なので、定義（ローカル）の範囲を変換する
       def getExtents
         bb = Geom::BoundingBox.new
-        b = @ctrl.group.bounds
+        return bb unless @ctrl.valid?
+
+        g = @ctrl.group
+        local = g.respond_to?(:definition) ? g.definition.bounds : g.bounds
         tr = @ctrl.world_transform
-        (0..7).each { |i| bb.add(b.corner(i).transform(tr)) }
+        (0..7).each { |i| bb.add(local.corner(i).transform(tr)) }
         bb
+      rescue StandardError
+        Geom::BoundingBox.new
       end
 
       private
 
       # Undo/Redo で保存データが変わっていたら読み直す（選択は破棄）
       def sync!
-        return false unless @ctrl.valid?
+        unless @ctrl.valid?
+          # 生成そのものを元に戻した等で割付グループが無くなった → ツールを終える
+          unless @exited
+            @exited = true
+            Sketchup.active_model.select_tool(nil)
+          end
+          return false
+        end
 
         reloaded = @ctrl.refresh!
         if reloaded || (@engine && !@engine.doc.equal?(@ctrl.doc))
@@ -651,7 +700,11 @@ module Higeotoko
       def report_exception(e, title)
         Core::Log.error("#{title}: #{e.class}: #{e.message}", at: (e.backtrace || []).first(6))
         @message = "#{title}（#{e.message}）"
-        update_status
+        begin
+          update_status
+        rescue StandardError
+          nil # 表示の更新でさらに失敗しても、メッセージだけは出す
+        end
         return if @error_shown
 
         @error_shown = true

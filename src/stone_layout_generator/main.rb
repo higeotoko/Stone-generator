@@ -13,23 +13,39 @@ module Higeotoko
       module_function
 
       def generate
-        GenerateDialog.create(Sketchup.active_model)
+        run { GenerateDialog.create(Sketchup.active_model) }
       end
 
       def edit
-        ctrl = controller_for_selection or return
-        Sketchup.active_model.select_tool(EditTool.new(ctrl))
+        run do
+          ctrl = controller_for_selection or next
+          Sketchup.active_model.select_tool(EditTool.new(ctrl))
+        end
       end
 
       def settings
-        ctrl = controller_for_selection or return
-        GenerateDialog.edit(ctrl)
+        run do
+          ctrl = controller_for_selection or next
+          GenerateDialog.edit(ctrl)
+        end
       end
 
       def check
-        ctrl = controller_for_selection or return
-        issues = ctrl.check_integrity
-        UI.messagebox(issues.empty? ? '割付データと石の形状は一致しています。' : issues.map(&:message).join("\n"))
+        run do
+          ctrl = controller_for_selection or next
+          issues = ctrl.check_integrity
+          UI.messagebox(issues.empty? ? '割付データと石の形状は一致しています。' : issues.map(&:message).join("\n"))
+        end
+      end
+
+      # コマンドの想定外のエラーを黙って捨てない
+      def run
+        yield
+      rescue Core::Error => e
+        UI.messagebox(e.message)
+      rescue StandardError => e
+        Core::Log.error("コマンドの実行に失敗: #{e.class}: #{e.message}", at: (e.backtrace || []).first(6))
+        UI.messagebox("エラーが発生しました。\n#{e.class}: #{e.message}\n\n詳細は ウィンドウ → Ruby コンソール に出力しています。")
       end
 
       def show_log
@@ -37,6 +53,9 @@ module Higeotoko
       end
 
       def controller_for_selection
+        # 目地編集中なら、その割付を使う（編集中は割付グループの選択を外しているため）
+        return EditTool.active.controller if EditTool.active&.controller&.valid?
+
         model = Sketchup.active_model
         group = ModelStore.find_layout(model)
         unless group

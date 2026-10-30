@@ -80,6 +80,11 @@ module Sketchup
       @transformation ||= Geom::Transformation.new
     end
 
+    # 定義（ローカル座標の範囲を持つ）
+    def definition
+      FakeDefinition.new(self)
+    end
+
     # 本物はグループの定義（ComponentDefinition）。定義の instances で親グループへたどれる
     def parent
       owner = @parent_entities.owner
@@ -139,6 +144,13 @@ module Sketchup
   FakeDefinition = Struct.new(:group) do
     def instances
       [group]
+    end
+
+    def bounds
+      bb = Geom::BoundingBox.new
+      group.entities.grep(Group).each { |g| g.faces.each { |f| f.points.each { |p| bb.add(p) } } }
+      group.faces.each { |f| f.points.each { |p| bb.add(p) } }
+      bb
     end
   end
 
