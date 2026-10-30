@@ -1,1 +1,66 @@
-# Stone-generator
+# Stone Layout Generator（石材割付ジェネレーター）
+
+SketchUp 用の石材割付プラグインです。壁面を選んで自動割付し、**生成された目地を 3D ビュー上で直接つかんで動かせる**ことを最優先に作っています。
+
+- 平面壁・折れ壁・R コーナー・丸柱を同じ割付エンジンで扱う（展開座標 `u, v`）
+- 目地をドラッグすると、接している石だけが追従して再生成される
+- 手動で調整した目地は、石厚・目地幅を変えても保持される
+- 割付データは SketchUp ファイル内（AttributeDictionary）に保存され、再読み込み後も編集を継続できる
+
+> ⚠ 現時点の幾何エンジンは Ruby 単体テストで検証済みですが、SketchUp 実機での動作確認はまだです。
+> 実機で確認すべき手順は [docs/SKETCHUP_TEST_PLAN.md](docs/SKETCHUP_TEST_PLAN.md) にまとめています。
+
+## インストール（開発版）
+
+`src/` の中身を SketchUp の Plugins フォルダへコピーします。
+
+```
+Plugins/
+  stone_layout_generator.rb
+  stone_layout_generator/
+```
+
+- Windows: `%APPDATA%\SketchUp\SketchUp 20XX\SketchUp\Plugins`
+- macOS: `~/Library/Application Support/SketchUp 20XX/SketchUp/Plugins`
+
+対象は SketchUp 2021 以降（Ruby 2.7 以上、`UI::HtmlDialog` 使用）を想定しています。
+
+## 使い方
+
+1. 割付したい鉛直な面を選択する（R 面は 1 枚のファセットを選ぶと、柔らかいエッジでつながる面をまとめて認識）
+2. 右クリック →「石割付を生成...」（または 拡張機能 → 石割付 Stone Layout）
+3. 石幅・石高さ・目地幅・石厚などを入れると、目地のプレビューが表示される
+4. 「生成」で石が作られ、そのまま目地編集モードに入る
+
+### 目地編集モード
+
+| 操作 | 内容 |
+| --- | --- |
+| クリック | 部分目地（石と石の間の 1 辺）を選択 |
+| Shift + クリック | 通り目地（同一直線上で連続する目地）を選択 |
+| Ctrl（Mac: Option）+ クリック | 追加選択 |
+| ドラッグ | 目地を移動。変更される石が黄色、移動後の目地が緑で表示される（不正な位置は赤＋理由） |
+| ドラッグ中に Alt（Mac: Command） | スナップを一時的に無効化 |
+| 数値入力（VCB） | 選択した目地を指定量だけ移動（例: `100` / `-50`）。ドラッグ中は動かしている向きに適用 |
+| Delete | 選択した目地を削除して両側の石を結合 |
+| Esc | ドラッグを取り消し → もう一度で選択解除 |
+| 右クリック | ここに縦目地／横目地を追加、ロック／解除、通り目地モード切替、設定、整合性チェック |
+
+編集パネルから石厚・目地幅の変更もできます（目地位置は保持）。
+保存済みのファイルでは、割付グループを選んで右クリック →「石割付: 目地を編集」で編集を再開できます。
+
+## 開発
+
+```bash
+rake test          # 幾何エンジン + SketchUp モックのテスト
+```
+
+```bash
+ruby test/run_all.rb   # rake が無い環境
+```
+
+```bash
+ruby bench/benchmark.rb   # 100 / 500 / 1000 / 5000 枚のベンチマーク
+```
+
+設計の詳細は [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)、実装状況・既知の課題は [docs/STATUS.md](docs/STATUS.md) を参照してください。

@@ -1,0 +1,72 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<title>目地編集</title>
+<style>
+  body { font: 12px/1.45 -apple-system, "Segoe UI", "Hiragino Sans", "Meiryo", sans-serif; color: #222; background: #fff; margin: 0; padding: 10px 12px; }
+  h2 { font-size: 12px; margin: 12px 0 6px; color: #666; border-bottom: 1px solid #ddd; padding-bottom: 2px; }
+  .kv { display: grid; grid-template-columns: 70px 1fr; gap: 2px 6px; }
+  .kv span:nth-child(odd) { color: #666; }
+  .row { display: flex; gap: 6px; margin: 4px 0; align-items: center; }
+  .row label { flex: 0 0 70px; }
+  .row input { flex: 1; min-width: 0; }
+  button { padding: 3px 8px; }
+  #msg { color: #c62828; margin-top: 8px; white-space: pre-wrap; }
+  .muted { color: #888; }
+</style>
+</head>
+<body>
+<h2>選択中の目地</h2>
+<div id="sel" class="muted">目地をクリックしてください（Shift で通り目地）</div>
+<div class="row"><label>移動量</label><input id="delta" type="text" placeholder="例: 100 / -50"><button id="btn-move">移動</button></div>
+<div class="row">
+  <button id="btn-mode">部分／通り</button>
+  <button id="btn-lock">ロック</button>
+  <button id="btn-unlock">解除</button>
+  <button id="btn-delete">削除</button>
+</div>
+<h2>石厚・目地幅（目地位置は保持）</h2>
+<div class="row"><label>石厚</label><input id="thickness" type="number"><span>mm</span></div>
+<div class="row"><label>縦目地幅</label><input id="joint_v" type="number" step="0.5"><span>mm</span></div>
+<div class="row"><label>横目地幅</label><input id="joint_h" type="number" step="0.5"><span>mm</span></div>
+<div class="row"><label>スナップ刻み</label><input id="snap_step" type="number" step="1"><span>mm</span></div>
+<div class="row"><button id="btn-apply">反映</button><button id="btn-dialog">詳細設定…</button><button id="btn-finish">編集を終了</button></div>
+<h2>集計</h2>
+<div id="stats" class="kv"></div>
+<div id="msg"></div>
+<script>
+function $(id) { return document.getElementById(id); }
+function esc(s) { return String(s).replace(/[&<>]/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]; }); }
+function update(info) {
+  var s = info.selection;
+  if (s) {
+    $('sel').className = 'kv';
+    $('sel').innerHTML = ['種別', s.mode + ' / ' + s.orientation, '位置', s.position + ' mm', '長さ', s.length + ' mm（' + s.count + '辺）', '状態', s.status]
+      .map(function (x) { return '<span>' + esc(x) + '</span>'; }).join('');
+  } else {
+    $('sel').className = 'muted'; $('sel').textContent = '目地をクリックしてください（Shift で通り目地）';
+  }
+  ['thickness', 'joint_v', 'joint_h', 'snap_step'].forEach(function (k) { if (document.activeElement !== $(k)) $(k).value = info.settings[k]; });
+  var st = info.stats;
+  $('stats').innerHTML = ['石', st.stones + ' 枚', '目地線分', st.joints, '手動', st.manual_joints, 'ロック', st.locked_joints, '面積', st.face_area_m2 + ' m²']
+    .map(function (x) { return '<span>' + esc(x) + '</span>'; }).join('');
+  $('msg').textContent = info.message || '';
+}
+function showError(m) { $('msg').textContent = m; }
+$('btn-move').onclick = function () { sketchup.move($('delta').value); };
+$('delta').onkeydown = function (e) { if (e.key === 'Enter') sketchup.move($('delta').value); };
+$('btn-mode').onclick = function () { sketchup.mode(); };
+$('btn-lock').onclick = function () { sketchup.lock(true); };
+$('btn-unlock').onclick = function () { sketchup.lock(false); };
+$('btn-delete').onclick = function () { sketchup.remove(); };
+$('btn-apply').onclick = function () {
+  sketchup.settings(JSON.stringify({ thickness: Number($('thickness').value), joint_v: Number($('joint_v').value),
+    joint_h: Number($('joint_h').value), snap_step: Number($('snap_step').value) }));
+};
+$('btn-dialog').onclick = function () { sketchup.dialog(); };
+$('btn-finish').onclick = function () { sketchup.finish(); };
+window.onload = function () { sketchup.ready(); };
+</script>
+</body>
+</html>
