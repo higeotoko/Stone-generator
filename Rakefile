@@ -14,3 +14,8 @@ task :bench do
 end
 
 task default: :test
+
+desc 'Build the SketchUp extension package (dist/*.rbz)'
+task :rbz do
+  ruby 'tools/build_rbz.rb'
+end

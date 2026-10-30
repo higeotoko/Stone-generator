@@ -10,7 +10,15 @@ SketchUp 用の石材割付プラグインです。壁面を選んで自動割�
 > ⚠ 現時点の幾何エンジンは Ruby 単体テストで検証済みですが、SketchUp 実機での動作確認はまだです。
 > 実機で確認すべき手順は [docs/SKETCHUP_TEST_PLAN.md](docs/SKETCHUP_TEST_PLAN.md) にまとめています。
 
-## インストール（開発版）
+## インストール
+
+### .rbz から（おすすめ）
+
+1. `ruby tools/build_rbz.rb`（または `rake rbz`）で `dist/stone_layout_generator-<版>.rbz` を作る
+2. SketchUp の 拡張機能 → Extension Manager →「拡張機能をインストール」で .rbz を選ぶ
+3. ツールバー「石割付 Stone Layout」が表示される（表示されないときは 表示 → ツールバー で有効化）
+
+### 開発版（ソースを直接置く）
 
 `src/` の中身を SketchUp の Plugins フォルダへコピーします。
 
@@ -25,10 +33,20 @@ Plugins/
 
 対象は SketchUp 2021 以降（Ruby 2.7 以上、`UI::HtmlDialog` 使用）を想定しています。
 
+### ツールバー
+
+| ボタン | 内容 | 使える条件 |
+| --- | --- | --- |
+| ![](src/stone_layout_generator/images/generate_24.png) 石割付を生成 | 選択した壁面に割付を作る | 面を選択しているとき |
+| ![](src/stone_layout_generator/images/edit_24.png) 目地を編集 | 目地の直接編集モードに入る | 割付グループ（または石）を選択しているとき |
+| ![](src/stone_layout_generator/images/settings_24.png) 割付設定を変更 | 石厚・目地幅などを変更（目地位置は保持） | 同上 |
+
+同じ操作は 拡張機能 → 石割付 Stone Layout メニューと右クリックメニューからも使えます。
+
 ## 使い方
 
 1. 割付したい鉛直な面を選択する（R 面は 1 枚のファセットを選ぶと、柔らかいエッジでつながる面をまとめて認識）
-2. 右クリック →「石割付を生成...」（または 拡張機能 → 石割付 Stone Layout）
+2. ツールバーの「石割付を生成」ボタン（または右クリック →「石割付を生成...」）
 3. 石幅・石高さ・目地幅・石厚などを入れると、目地のプレビューが表示される
 4. 「生成」で石が作られ、そのまま目地編集モードに入る
 
@@ -61,6 +79,14 @@ ruby test/run_all.rb   # rake が無い環境
 
 ```bash
 ruby bench/benchmark.rb   # 100 / 500 / 1000 / 5000 枚のベンチマーク
+```
+
+```bash
+ruby tools/build_rbz.rb   # .rbz パッケージを dist/ に作成
+```
+
+```bash
+python3 tools/make_icons.py   # ツールバーアイコン（SVG/PNG）を再生成（要 Pillow）
 ```
 
 設計の詳細は [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)、実装状況・既知の課題は [docs/STATUS.md](docs/STATUS.md) を参照してください。

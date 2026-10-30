@@ -4,7 +4,7 @@ require 'sketchup.rb'
 require_relative 'core'
 %w[
   units model_store face_reader geometry_builder layout_controller
-  tools/preview_tool tools/edit_tool ui/generate_dialog ui/edit_panel
+  tools/preview_tool tools/edit_tool ui/generate_dialog ui/edit_panel ui/toolbar
 ].each { |f| require_relative File.join('sketchup', f) }
 
 module Higeotoko
@@ -52,13 +52,15 @@ module Higeotoko
     end
 
     unless file_loaded?(__FILE__)
+      cmds = Toolbar.commands
       menu = UI.menu('Extensions').add_submenu('石割付 Stone Layout')
-      menu.add_item('選択面に石割付を生成...') { Commands.generate }
-      menu.add_item('目地を編集') { Commands.edit }
-      menu.add_item('割付設定を変更...') { Commands.settings }
+      menu.add_item(cmds[:generate])
+      menu.add_item(cmds[:edit])
+      menu.add_item(cmds[:settings])
       menu.add_separator
       menu.add_item('整合性チェック') { Commands.check }
       menu.add_item('ログを表示') { Commands.show_log }
+      Toolbar.install
 
       UI.add_context_menu_handler do |cm|
         sel = Sketchup.active_model.selection
