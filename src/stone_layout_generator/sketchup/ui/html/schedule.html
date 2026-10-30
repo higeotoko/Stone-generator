@@ -1,0 +1,73 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>石寸法一覧</title>
+  <style>
+    :root { color-scheme: light dark; --bg:#f5f6f8; --surface:#fff; --text:#253142; --muted:#647185; --line:#dce1e8; --accent:#2469c0; --hover:#eef3fb; --bad:#d64d4d; }
+    @media (prefers-color-scheme:dark) { :root { --bg:#20242b; --surface:#292f38; --text:#eef1f5; --muted:#aab5c5; --line:#424b58; --accent:#87b9ff; --hover:#323b48; } }
+    * { box-sizing:border-box; } body { margin:0; background:var(--bg); color:var(--text); font:13px "Segoe UI","Meiryo","Hiragino Sans",sans-serif; }
+    main { max-width:900px; margin:auto; padding:20px; } header { margin-bottom:14px; } h1 { margin:0; font-size:21px; } #sub { color:var(--muted); margin-top:5px; font-size:12px; }
+    button,input { font:inherit; }
+    button { cursor:pointer; border:1px solid var(--line); border-radius:8px; background:var(--surface); color:var(--text); padding:10px 12px; }
+    button:hover { border-color:var(--accent); } button:focus-visible,input:focus-visible,tr:focus-visible { outline:2px solid var(--accent); outline-offset:2px; }
+    .cards { display:grid; grid-template-columns:repeat(4,1fr); gap:8px; margin-bottom:16px; }
+    .card { background:var(--surface); border:1px solid var(--line); border-radius:8px; padding:10px 12px; }
+    .card small { display:block; color:var(--muted); font-size:11px; } .card b { font-size:18px; }
+    .row { display:flex; gap:10px; align-items:end; margin-bottom:14px; }
+    label { display:block; font-size:12px; font-weight:600; } .unit { font-weight:400; color:var(--muted); }
+    label input { width:110px; min-height:36px; margin-top:6px; border:1px solid var(--line); border-radius:7px; color:var(--text); background:var(--surface); padding:7px; }
+    h2 { font-size:inherit; font-weight:600; margin:18px 0 8px; }
+    .table { overflow:auto; border:1px solid var(--line); border-radius:8px; background:var(--surface); max-height:330px; }
+    table { border-collapse:collapse; width:100%; font-size:12px; }
+    th, td { padding:7px 9px; text-align:right; border-bottom:1px solid var(--line); white-space:nowrap; }
+    th { position:sticky; top:0; background:var(--surface); color:var(--muted); font-weight:600; }
+    td.l, th.l { text-align:left; } tbody tr:last-child td { border-bottom:0; }
+    #types tbody tr { cursor:pointer; } #types tbody tr:hover { background:var(--hover); }
+    .code { font-weight:700; color:var(--accent); }
+    details { border-top:1px solid var(--line); margin-top:16px; padding-top:12px; } summary { cursor:pointer; font-weight:600; padding:3px 0 10px; }
+    .actions { display:grid; grid-template-columns:2fr 1fr; gap:8px; margin-top:18px; }
+    .primary { border-color:var(--accent); background:var(--accent); color:#fff; font-weight:600; font-size:14px; padding:12px; }
+    @media (prefers-color-scheme:dark) { .primary { color:#142438; } }
+    .hint { color:var(--muted); line-height:1.6; margin:7px 0 0; font-size:11px; }
+    #status { margin-top:12px; min-height:18px; color:var(--muted); white-space:pre-wrap; } #status.error { color:var(--bad); }
+    @media (max-width:560px) { .cards { grid-template-columns:repeat(2,1fr); } main { padding:14px; } }
+  </style>
+</head>
+<body>
+<main>
+  <header><h1>石寸法一覧</h1><div id="sub">集計中…</div></header>
+
+  <div class="cards">
+    <div class="card"><small>枚数</small><b id="t-count">-</b></div>
+    <div class="card"><small>表面積</small><b id="t-area">-</b></div>
+    <div class="card"><small>体積</small><b id="t-volume">-</b></div>
+    <div class="card"><small>重量</small><b id="t-weight">-</b></div>
+  </div>
+
+  <div class="row">
+    <label>比重 <span class="unit">t/m³</span><input id="density" type="number" min="0.1" step="0.05"></label>
+    <p class="hint">御影石 2.6〜2.7 ／ 大理石 2.7 ／ 砂岩 2.2〜2.4 程度。変えると重量だけ再計算します。</p>
+  </div>
+
+  <h2>種別ごとの数量 <span class="unit">（行をクリックすると、その石をモデル上で選択）</span></h2>
+  <div class="table"><table id="types">
+    <thead><tr><th class="l">種別</th><th class="l">形状</th><th>幅</th><th>高さ</th><th>厚さ</th><th>枚数</th><th>表面積 m²</th><th>重量 kg</th><th class="l">備考</th></tr></thead>
+    <tbody></tbody>
+  </table></div>
+  <p class="hint">寸法は目地・逃げを差し引いた石の実寸（mm）。曲面の幅は基準面に沿った長さ、体積と重量は角の納まりを含む実形状から計算しています。</p>
+
+  <details><summary>石ごとの一覧</summary>
+    <div class="table"><table id="rows">
+      <thead><tr><th class="l">石番号</th><th class="l">種別</th><th class="l">形状</th><th>幅</th><th>高さ</th><th>厚さ</th><th>表面積 m²</th><th>体積 m³</th><th>重量 kg</th><th>位置 u</th><th>位置 v</th><th class="l">備考</th></tr></thead>
+      <tbody></tbody>
+    </table></div>
+  </details>
+
+  <div class="actions"><button id="export" class="primary" type="button">CSV に書き出す（Excel で開けます）</button><button id="close" type="button">閉じる</button></div>
+  <div id="status" role="status" aria-live="polite"></div>
+</main>
+<script src="schedule.js"></script>
+</body>
+</html>

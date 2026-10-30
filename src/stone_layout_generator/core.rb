@@ -45,4 +45,5 @@ dir = File.join(__dir__, 'core')
   mesh/stone_mesh
   mesh/stone_geometry
   persistence/serializer
+  schedule/schedule
 ].each { |f| require File.join(dir, f) }

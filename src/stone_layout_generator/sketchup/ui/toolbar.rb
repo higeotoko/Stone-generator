@@ -22,6 +22,10 @@ module Higeotoko
           settings: command('割付設定を変更', 'settings',
                             '石厚・目地幅などを変更します（調整した目地位置は保持）') { Commands.settings }.tap do |c|
             c.set_validation_proc { state { layout_selected? } }
+          end,
+          schedule: command('石寸法一覧', 'schedule',
+                            '石の寸法・枚数・面積・重量を集計し、CSV に書き出します') { Commands.schedule }.tap do |c|
+            c.set_validation_proc { state { layout_selected? } }
           end
         }
       end
@@ -56,6 +60,7 @@ module Higeotoko
         tb.add_separator
         tb.add_item(commands[:edit])
         tb.add_item(commands[:settings])
+        tb.add_item(commands[:schedule])
         tb.get_last_state == TB_NEVER_SHOWN ? tb.show : tb.restore
         tb
       end

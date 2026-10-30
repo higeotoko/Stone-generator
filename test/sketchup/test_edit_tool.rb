@@ -5,7 +5,7 @@ require_relative '../support/fake_view'
 require 'json'
 require 'tmpdir'
 %w[units model_store face_reader geometry_builder layout_controller tools/preview_tool tools/edit_tool
-   ui/generate_dialog ui/edit_panel].each do |f|
+   ui/generate_dialog ui/edit_panel ui/schedule_dialog].each do |f|
   require_relative "../../src/stone_layout_generator/sketchup/#{f}"
 end
 
@@ -419,6 +419,46 @@ class TestEditTool < Minitest::Test
       blocks.first.call # 目地を削除
     end
     assert_match(/menu boom/, @tool.message)
+  end
+
+  def open_schedule
+    made = []
+    orig = UI::HtmlDialog.method(:new)
+    UI::HtmlDialog.stub(:new, ->(*args) { orig.call(*args).tap { |d| made << d } }) { SL::ScheduleDialog.show(@ctrl) }
+    d = made.last
+    d.fire('ready')
+    [d, JSON.parse(d.scripts.last[/\Arender\((.*)\)\z/m, 1])]
+  end
+
+  def test_schedule_dialog_select_density_export
+    d, data = open_schedule
+    assert_equal 30, data['totals']['count']
+    assert_equal 'A', data['types'].first['code']
+    assert_equal 30, data['rows'].size
+
+    d.fire('select', 'A')
+    assert_equal 12, @model.selection.to_a.size
+    assert(@model.selection.to_a.all? { |g| SL::ModelStore.stone_group?(g) })
+
+    before = SL::ModelStore.stone_index(@ctrl.group).transform_values { |g| g.faces.map(&:points) }
+    ops = @model.log.size
+    d.fire('density', '2.3')
+    _, data = [d, JSON.parse(d.scripts.last[/\Arender\((.*)\)\z/m, 1])]
+    assert_equal 2.3, data['totals']['density']
+    assert_equal before, SL::ModelStore.stone_index(@ctrl.group).transform_values { |g| g.faces.map(&:points) } # 石は作り直さない
+    assert_equal ops + 2, @model.log.size # 1 回の操作（start + commit）
+
+    Dir.mktmpdir do |dir|
+      path = File.join(dir, 'out')
+      UI.stub(:savepanel, ->(*) { path }) { d.fire('export') }
+      csv = File.binread("#{path}.csv").force_encoding('UTF-8')
+      assert csv.start_with?("\uFEFF")
+      assert_includes csv, 'StoneLayout_001'
+      assert_match(/report\(.*書き出しました/, d.scripts.last)
+    end
+    UI.stub(:savepanel, ->(*) { nil }) { d.fire('export') } # キャンセル
+    d.fire('density', 'abc')
+    assert_match(/report\(.*error/, d.scripts.last)
   end
 
   class FakeMenu

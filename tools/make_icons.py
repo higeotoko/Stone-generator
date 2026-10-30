@@ -39,7 +39,18 @@ def settings():
     ]
     return out
 
-ICONS = {'generate': running_bond, 'edit': edit_joint, 'settings': settings}
+def schedule():
+    # 一覧表（見出し行＋行）と石
+    out = [('rect', 3, 4, 26, 24, '#ffffff'), ('rect', 3, 4, 26, 6, '#acc5df')]
+    for y in (14, 19, 24):
+        out.append(('line', 6, y, 26, y, EDGE, 1.2))
+    out.append(('line', 12, 10, 12, 28, EDGE, 1))
+    out.append(('rect', 5, 12, 5, 3, STONE))
+    out.append(('rect', 5, 17, 5, 3, STONE))
+    out.append(('rect', 5, 22, 5, 3, STONE))
+    return out
+
+ICONS = {'generate': running_bond, 'edit': edit_joint, 'settings': settings, 'schedule': schedule}
 
 def svg(shapes):
     parts = ['<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32">']

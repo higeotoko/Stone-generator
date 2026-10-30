@@ -179,6 +179,10 @@ module Sketchup
   class Model
     attr_accessor :tool
 
+    def path
+      ''
+    end
+
     def selection
       @selection ||= FakeSelection.new
     end
@@ -247,6 +251,10 @@ module UI
     attr_reader :messages
 
     def beep; end
+
+    def savepanel(*)
+      nil
+    end
 
     def messagebox(msg, _type = nil)
       @messages << msg

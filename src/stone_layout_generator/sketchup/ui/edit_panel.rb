@@ -68,6 +68,7 @@ module Higeotoko
           end
         end
         @dialog.add_action_callback('dialog') { |_ctx| with_tool { |t| GenerateDialog.edit(t.controller) } }
+        @dialog.add_action_callback('schedule') { |_ctx| with_tool { |t| ScheduleDialog.show(t.controller) } }
         @dialog.add_action_callback('finish') { |_ctx| Sketchup.active_model.select_tool(nil) }
         @dialog.set_on_closed { @dialog = nil }
         @dialog.show

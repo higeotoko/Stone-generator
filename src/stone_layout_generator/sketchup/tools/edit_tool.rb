@@ -261,6 +261,7 @@ module Higeotoko
             menu.add_separator
           end
           menu.add_item('割付設定を変更...') { safely { GenerateDialog.edit(@ctrl) } }
+          menu.add_item('石寸法一覧...') { safely { ScheduleDialog.show(@ctrl) } }
           menu.add_item('整合性チェック') { safely { warn_integrity(force: true) } }
           menu.add_item('編集を終了') { Sketchup.active_model.select_tool(nil) }
         end

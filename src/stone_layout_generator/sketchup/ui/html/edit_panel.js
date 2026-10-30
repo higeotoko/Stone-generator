@@ -59,6 +59,7 @@
     sketchup.settings(JSON.stringify(o));
   });
   byId('dialog').addEventListener('click', () => sketchup.dialog());
+  byId('schedule').addEventListener('click', () => sketchup.schedule());
   byId('finish').addEventListener('click', () => sketchup.finish());
   window.addEventListener('load', () => sketchup.ready());
 })();

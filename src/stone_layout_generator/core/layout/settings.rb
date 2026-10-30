@@ -44,6 +44,7 @@ module Higeotoko::StoneLayout::Core
       'max_arc_error' => 0.5,    # mm
       # 編集
       'snap_step' => 1.0,
+      'density' => 2.7,          # 比重（t/m3）。重量の集計用（御影石 2.6〜2.7 / 大理石 2.7 / 砂岩 2.2〜2.4）
       'material' => nil
     }.freeze
 
@@ -140,7 +141,7 @@ module Higeotoko::StoneLayout::Core
     def validate
       errors = []
       positive = { 'stone_width' => '基本石幅', 'stone_height' => '基本石高さ', 'thickness' => '石厚',
-                   'max_arc_angle' => '最大分割角', 'max_arc_error' => '最大弦誤差' }
+                   'max_arc_angle' => '最大分割角', 'max_arc_error' => '最大弦誤差', 'density' => '比重' }
       positive.each do |k, label|
         v = self[k]
         if v.zero?

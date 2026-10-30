@@ -41,6 +41,7 @@ Plugins/
 | ![](src/stone_layout_generator/images/generate_24.png) 石割付を生成 | 選択した壁面に割付を作る | 面を選択しているとき |
 | ![](src/stone_layout_generator/images/edit_24.png) 目地を編集 | 目地の直接編集モードに入る | 割付グループ（または石）を選択しているとき |
 | ![](src/stone_layout_generator/images/settings_24.png) 割付設定を変更 | 石厚・目地幅などを変更（目地位置は保持） | 同上 |
+| ![](src/stone_layout_generator/images/schedule_24.png) 石寸法一覧 | 種別ごとの枚数・面積・体積・重量の集計、CSV 書き出し、種別の石をモデル上で選択 | 同上 |
 
 同じ操作は 拡張機能 → 石割付 Stone Layout メニューと右クリックメニューからも使えます。
 

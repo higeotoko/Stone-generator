@@ -13,6 +13,9 @@ module Higeotoko
 
       Issue = Struct.new(:kind, :panel_id, :message)
 
+      # 石の形に関係しない設定
+      NON_GEOMETRY_KEYS = %w[density snap_step].freeze
+
       # 新規生成
       def self.create(model, entities, surface, settings)
         doc, stats = Core::LayoutBuilder.build(surface, settings)
@@ -161,6 +164,11 @@ module Higeotoko
 
         old = @doc.settings
         @doc.settings = new_settings
+        if (Core::Settings::DEFAULTS.keys - NON_GEOMETRY_KEYS).all? { |k| old[k] == new_settings[k] }
+          # 比重・スナップ刻みだけの変更: 石は作り直さない
+          @doc.revision += 1
+          return transact('石割付: 設定変更') { ModelStore.save(@group, @doc) }
+        end
         begin
           built = build_or_raise(@doc.panels.keys)
         rescue StandardError
