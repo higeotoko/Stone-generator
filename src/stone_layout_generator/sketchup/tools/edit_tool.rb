@@ -188,9 +188,32 @@ module Higeotoko
         update_status
       end
 
+      # Delete キーで選択中の目地を消す。SketchUp の「削除」ショートカットに取られて
+      # onKeyDown が届かない環境があるため、onKeyUp でも受ける（同じ押下で二重に消さない）
       def onKeyDown(key, _repeat, _flags, view)
-        del = DELETE_KEYS.include?(key) || (defined?(VK_DELETE) && key == VK_DELETE)
-        return false unless del && !@selection.empty?
+        Core::Log.info('key down', key: key) if delete_key?(key)
+        return false unless delete_key?(key)
+
+        @delete_handled = handle_delete(view)
+      end
+
+      def onKeyUp(key, _repeat, _flags, view)
+        return false unless delete_key?(key)
+
+        Core::Log.info('key up', key: key)
+        if @delete_handled
+          @delete_handled = false
+          return true
+        end
+        handle_delete(view)
+      end
+
+      def delete_key?(key)
+        DELETE_KEYS.include?(key) || (defined?(VK_DELETE) && key == VK_DELETE)
+      end
+
+      def handle_delete(view)
+        return false if @selection.empty?
         return false if @drag && @drag[:kind] == :press
 
         cancel_drag
@@ -229,12 +252,38 @@ module Higeotoko
         commit(plan, '石割付: 目地移動') { |_| shift_selection(mm) }
       end
 
+      # 選択中の目地をすべて消す（通り目地なら各辺を順に消して 1 つの Undo にまとめる）
       def delete_selection
-        piece = @selection.first
-        return unless piece
+        return if @selection.empty?
 
-        plan = engine.plan_delete(piece)
-        commit(plan, '石割付: 目地削除') { @selection = [] }
+        if @selection.size == 1
+          plan = engine.plan_delete(@selection.first)
+          return commit(plan, '石割付: 目地削除') { @selection = [] }
+        end
+
+        pieces = @selection.dup
+        change = @ctrl.commit_sequence('石割付: 目地削除') do |eng|
+          pieces.map do |pc|
+            cur = eng.pick((pc.a + pc.b) * 0.5, 0.5)
+            raise Core::Error, '削除する目地が見つかりません' unless cur
+
+            plan = eng.plan_delete(cur)
+            raise Core::Error, plan.errors.first unless plan.ok?
+
+            eng.apply(plan)
+          end
+        end
+        @engine = nil
+        @selection = []
+        @message = nil
+        @done = format('目地を %d 辺 消しました（石 %d 枚を結合）', pieces.size, change.removed.size)
+      rescue Core::Error => e
+        @message = e.message
+        UI.beep
+      ensure
+        notify_panel
+        update_status
+        Sketchup.active_model.active_view.invalidate
       end
 
       def add_joint(uv, orient)

@@ -123,6 +123,29 @@ module Higeotoko
         change
       end
 
+      # 複数の編集（例: 通り目地の各辺の削除）を順に適用し、1 つの Undo にまとめる。
+      # ブロックは EditEngine を受け取り、apply した ChangeSet の配列を返す。
+      def commit_sequence(name)
+        engine = Core::EditEngine.new(@doc)
+        begin
+          sets = yield engine
+        rescue StandardError
+          reload!
+          raise
+        end
+        removed = sets.flat_map(&:removed).uniq
+        rebuild = (sets.flat_map(&:regenerate) + sets.flat_map(&:added)).uniq - removed
+        stale = removed.select { |id| index.key?(id) }
+        transact(name) do
+          built = build_or_raise(rebuild)
+          builder = GeometryBuilder.new(@group, @doc)
+          builder.remove(stale, index)
+          builder.rebuild(built, index)
+          ModelStore.save(@group, @doc)
+        end
+        Core::ChangeSet.new(rebuild - sets.flat_map(&:added), sets.flat_map(&:added) - removed, removed)
+      end
+
       # 石厚・目地幅・生成方向など（目地位置は変えない）
       def change_settings(changes)
         new_settings = @doc.settings.merge(changes)

@@ -256,6 +256,44 @@ class TestEditTool < Minitest::Test
     assert_equal 5, @tool.selection.size
   end
 
+  def select_at(u, v, flags = 0)
+    @tool.onLButtonDown(flags, *at(u, v), @view)
+    @tool.onLButtonUp(flags, *at(u, v), @view)
+  end
+
+  def test_delete_key_removes_joint
+    select_at(900, 300)
+    assert @tool.onKeyDown(46, 1, 0, @view)
+    assert @tool.onKeyUp(46, 1, 0, @view) # 同じ押下で二重に消さない
+    assert_equal 29, @ctrl.doc.panels.size
+    assert_in_delta 1800, width_of(450, 300)
+    assert_equal 29, SL::ModelStore.stone_index(@ctrl.group).size
+  end
+
+  # SketchUp の削除ショートカットに取られて onKeyDown が来ない場合
+  def test_delete_key_up_only
+    select_at(900, 300)
+    assert @tool.onKeyUp(46, 1, 0, @view)
+    assert_equal 29, @ctrl.doc.panels.size
+  end
+
+  def test_delete_through_joint_in_one_undo
+    @tool.toggle_mode
+    select_at(900, 300)
+    assert_equal 5, @tool.selection.size
+    @tool.onKeyDown(46, 1, 0, @view)
+    assert_equal 25, @ctrl.doc.panels.size
+    5.times { |row| assert_in_delta 1800, width_of(100, row * 600 + 300) }
+    assert_equal 25, SL::ModelStore.stone_index(@ctrl.group).size
+    assert_equal 1, @model.log.count { |e| e == [:commit, '石割付: 目地削除'] }
+    assert_empty @ctrl.check_integrity
+  end
+
+  def test_delete_with_nothing_selected_is_ignored
+    refute @tool.onKeyDown(46, 1, 0, @view)
+    assert_equal 30, @ctrl.doc.panels.size
+  end
+
   class FakeMenu
     def add_item(*) = 1
     def add_separator; end
