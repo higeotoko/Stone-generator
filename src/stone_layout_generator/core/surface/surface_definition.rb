@@ -1,0 +1,158 @@
+# frozen_string_literal: true
+
+module Higeotoko::StoneLayout::Core
+  # 割付対象面の抽象表現。
+  #
+  #   P(u, v, s) = ( profile.offset_point(u, s), v )
+  #
+  # u: 断面に沿った累積距離（基準面＝選択面上の弧長）
+  # v: 高さ（z）
+  # s: 法線方向オフセット（+ が外側）
+  #
+  # boundary は展開座標 (u, v) 上の外周多角形（CCW）。
+  # 閉じた断面では u 方向が周期的になり、boundary は [0, L] x [v_min, v_max]。
+  # holes は開口部（窓・扉など）の多角形の配列（CCW）。開口の中には石を置かない。
+  class SurfaceDefinition
+    attr_reader :profile, :boundary, :source, :holes
+
+    def self.rectangle(profile, v_min, v_max, source = {}, holes: [])
+      l = profile.length
+      boundary = [Vec2.new(0, v_min), Vec2.new(l, v_min), Vec2.new(l, v_max), Vec2.new(0, v_max)]
+      new(profile, boundary, source, holes: holes)
+    end
+
+    # テスト・単純な平面壁用: 原点から +x 方向の幅 width、高さ height
+    def self.flat_wall(width, height, origin: Vec2.new(0, 0), v_min: 0.0, holes: [])
+      prof = Profile.new([LineSegment2.new(origin, origin + Vec2.new(width, 0))])
+      rectangle(prof, v_min, v_min + height, {}, holes: holes)
+    end
+
+    def initialize(profile, boundary, source = {}, holes: [])
+      @profile = profile
+      boundary = boundary.reverse if Polygon.signed_area(boundary).negative?
+      raise InvalidInput, '割付範囲の外周が不正です' unless Polygon.area(boundary) > Tol::AREA
+
+      @boundary = boundary
+      @source = source
+      @bbox = Polygon.bbox(boundary)
+      @holes = holes.map { |h| Polygon.signed_area(h).negative? ? h.reverse : h }.select { |h| Polygon.area(h) > Tol::AREA }
+      @holes.each do |h|
+        raise InvalidInput, '開口部の形が不正です（自己交差しています）' unless Polygon.simple?(h)
+      end
+    end
+
+    def holes?
+      !@holes.empty?
+    end
+
+    # 点が開口部の内側（縁は含まない）か
+    def in_hole?(p, tol = Tol::POINT)
+      @holes.any? do |h|
+        Polygon.contains?(h, p) && Polygon.edges(h).none? { |a, b| Geom2.point_on_segment?(p, a, b, tol) }
+      end
+    end
+
+    # 点が開口部の縁の上か
+    def on_hole_edge?(p, tol = Tol::POINT)
+      @holes.any? { |h| Polygon.edges(h).any? { |a, b| Geom2.point_on_segment?(p, a, b, tol) } }
+    end
+
+    def periodic?
+      @profile.closed?
+    end
+
+    def period
+      @profile.length
+    end
+
+    def bbox
+      @bbox
+    end
+
+    def v_min
+      @bbox[1]
+    end
+
+    def v_max
+      @bbox[3]
+    end
+
+    def u_length
+      @profile.length
+    end
+
+    def rectangular?
+      !holes? && @boundary.size == 4 && (Polygon.area(@boundary) - (@bbox[2] - @bbox[0]) * (@bbox[3] - @bbox[1])).abs < Tol::AREA
+    end
+
+    # 展開座標の点が割付範囲内か（周期方向は無視）
+    def inside?(p, tol = Tol::POINT)
+      return false if holes? && in_hole?(periodic? ? p.shift_x(-((p.x / period).floor * period)) : p, tol)
+
+      if periodic?
+        p.y >= v_min - tol && p.y <= v_max + tol
+      else
+        return true if Polygon.contains?(@boundary, p)
+
+        Polygon.edges(@boundary).any? { |a, b| Geom2.point_on_segment?(p, a, b, tol) }
+      end
+    end
+
+    # 3D 座標 [x, y, z] (mm)
+    def point3d(u, v, s = 0.0)
+      q = @profile.offset_point(u, s)
+      [q.x, q.y, v]
+    end
+
+    def normal3d(u)
+      n = @profile.normal(u)
+      [n.x, n.y, 0.0]
+    end
+
+    # 3D 射線とオフセット s の面の交点 → { u:, v:, t: } （最も近いもの）
+    def intersect_ray(origin, dir, s = 0.0)
+      o2 = Vec2.new(origin[0], origin[1])
+      d2 = Vec2.new(dir[0], dir[1])
+      return nil if d2.length2 < 1e-18
+
+      best = nil
+      @profile.intersect_ray(o2, d2, s).each do |t, u|
+        next if t.negative?
+
+        v = origin[2] + dir[2] * t
+        p = Vec2.new(u, v)
+        next unless periodic? ? (v >= v_min - 1 && v <= v_max + 1) : inside?(p, 1.0)
+
+        best = { u: u, v: v, t: t } if best.nil? || t < best[:t]
+      end
+      best
+    end
+
+    # 展開座標の折れ線を 3D 点列へ（曲面部分は分割して沿わせる）
+    def polyline3d(a, b, s = 0.0)
+      # 縦の線（u が同じ）は曲面に沿わせる必要がない。両端をそのまま結ぶ
+      return [point3d(a.x, a.y, s), point3d(b.x, b.y, s)] if (b.x - a.x).abs <= Tol::POINT
+
+      lo, hi = [a.x, b.x].minmax
+      us = [lo]
+      us.concat(@profile.breakpoints(lo, hi)) if hi - lo > Tol::POINT
+      us << hi
+      us.reverse! if b.x < a.x
+      us.map do |u|
+        t = (u - a.x) / (b.x - a.x)
+        point3d(u, a.y + (b.y - a.y) * t, s)
+      end
+    end
+
+    def to_h
+      h = { 'profile' => @profile.to_h, 'boundary' => @boundary.map(&:to_a), 'source' => @source }
+      h['holes'] = @holes.map { |pg| pg.map(&:to_a) } if holes?
+      h
+    end
+
+    def self.from_h(h)
+      holes = (h['holes'] || []).map { |pg| pg.map { |a| Vec2.new(*a) } }
+      new(Profile.from_h(h['profile']), h['boundary'].map { |a| Vec2.new(*a) }, h['source'] || {}, holes: holes)
+    end
+  end
+end
